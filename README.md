@@ -9,10 +9,13 @@ It runs entirely on your machine: **Ollama** for the model, **PostgreSQL +
 pgvector** for the index, **FastAPI** for the API. Cloud providers (Anthropic,
 OpenAI) are a configuration change, not a code change.
 
-> **Status:** Checkpoint 1 of 5 complete — knowledge spine (ingestion, hybrid
-> retrieval, schema, health, evaluation harness). The conversational API, skills,
-> artifact viewer and frontend land in later checkpoints. This README documents
-> only what is actually implemented and verified today.
+> **Status:** Checkpoint 2 of 5 complete — knowledge spine (ingestion, hybrid
+> retrieval, schema, health, evaluation harness) plus a provider-agnostic LLM
+> layer, a hybrid intent router, a grounded Q&A skill with citation validation,
+> sessions/messages persistence, and SSE streaming with phase events. The Ship
+> 30 essay skill, artifact generation and the frontend land in later
+> checkpoints. This README documents only what is actually implemented and
+> verified today.
 
 ---
 
@@ -54,11 +57,13 @@ golden set, not guessed — see [Evaluating retrieval](#evaluating-retrieval).
               ▼                  ▼                  ▼
       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
       │  Retrieval   │   │  Agent layer │   │  PostgreSQL  │
-      │  lexical +   │   │ (checkpoint  │   │  + pgvector  │
-      │  semantic    │   │   2 & 3)     │   │              │
-      │  → RRF fuse  │   └──────┬───────┘   └──────────────┘
-      └──────┬───────┘          │
-             │            ┌─────▼──────┐
+      │  lexical +   │   │  router ·    │   │  sessions ·  │
+      │  semantic    │   │  skills      │   │  messages    │
+      │  → RRF fuse  │   │ (skill 3:    │   │  + pgvector  │
+      └──────┬───────┘   │  checkpt 3)  │   └──────────────┘
+             │            └──────┬───────┘
+             │                   │
+             │            ┌──────▼─────┐
              │            │ LLM layer  │  Ollama / Anthropic / OpenAI
              │            └────────────┘
              ▼
@@ -83,11 +88,15 @@ backend/
     observability.py    Structured JSON logging + request correlation
     errors.py           Error taxonomy with stable machine-readable codes
     api/health.py       Liveness / readiness / per-dependency diagnostics
+    api/sessions.py     Sessions, message history, SSE streaming chat
     db/                 Engine, migration runner, SQL schema
     ingestion/          fetch → parse → chunk → select → pipeline
     retrieval/          Hybrid retriever, embeddings, inspector CLI
-    evals/              Golden set + retrieval evaluation harness
-  tests/                Pure tests (always run) + db-marked tests
+    llm/                Provider abstraction: Ollama · Anthropic · OpenAI
+    agent/              Skill contract, router, runtime, grounded Q&A skill
+    services/           Session/message persistence, chat orchestration
+    evals/              Golden set + retrieval + grounding evaluation harness
+  tests/                Pure tests (always run) + db-marked + llm-marked tests
 docker-compose.yml      db · ingest · api
 .env.example            Every setting, documented, safe defaults
 ```
@@ -274,6 +283,68 @@ question and its score, is at
 
 ---
 
+## The conversational API
+
+```
+POST   /api/sessions               create a session
+GET    /api/sessions               list sessions
+GET    /api/sessions/{id}          full message history, with sources
+POST   /api/sessions/{id}/messages post a message, stream the answer (SSE)
+GET    /api/provider               which provider/model is answering right now
+```
+
+A message is routed to one of three intents -- `knowledge_qa`, `ship30_essay`,
+`artifact` -- by a hybrid router: fast deterministic rules for unambiguous
+phrasing, falling back to one small LLM call only when the rules disagree.
+`ship30_essay` and `artifact` are registered and routable today; they answer
+with an explicit "this lands in checkpoint 3" placeholder rather than silently
+running Q&A instead, so routing accuracy is measured honestly.
+
+`knowledge_qa` is the grounded answer skill: it retrieves, refuses outright if
+confidence is below `RETRIEVAL_MIN_CONFIDENCE`, otherwise prompts the model
+with numbered passages and a hard citation contract, then validates the
+result -- markers that do not resolve to a retrieved passage are stripped, and
+an answer that ends up with no valid citation at all is retried once and then
+refused rather than shown. See
+[`agent-transcripts/checkpoint-2-agent-runtime.md`](agent-transcripts/checkpoint-2-agent-runtime.md)
+for why an in-process runtime was used instead of the Claude Agent SDK.
+
+The response streams as Server-Sent Events with phase events
+(`routing` → `retrieving` → `generating` → `validating` → `done`) so a slow
+local model still feels responsive, plus `sources` (as soon as retrieval
+finishes) and `delta` (token-by-token text). Sessions are isolated at the
+database layer -- every query is scoped by `session_id`, and history for one
+session never leaks into another (`test_db_sessions.py`,
+`test_api_chat.py`).
+
+### Evaluating grounding
+
+```bash
+cd backend && .venv/Scripts/python -m app.evals.grounding_eval
+```
+
+Runs the real grounded Q&A skill against the live index and the configured
+model, for every answerable golden question, and checks whether each answer is
+actually grounded -- a citation that resolves to a retrieved passage, and no
+uncited paragraph. Measured against `qwen2.5:7b-instruct` and the full
+40-episode index:
+
+```
+M1 grounded answer rate : 100% (12/12 answered questions)
+  12 in-corpus questions total, 0 refused (excluded from M1, see M2)
+```
+
+The first run measured 75% -- a citation-retry gate that only fired on a
+*total* absence of citations let through answers with one uncited "in
+summary" paragraph tacked onto an otherwise well-cited response. Widening the
+retry trigger to cover that case brought it to 100% on the same golden set and
+model, without moving M2/M3. Full account in
+[`agent-transcripts/checkpoint-2-agent-runtime.md`](agent-transcripts/checkpoint-2-agent-runtime.md);
+per-question numbers in
+[`docs/grounding-eval-report.json`](docs/grounding-eval-report.json).
+
+---
+
 ## Tests
 
 ```bash
@@ -281,13 +352,18 @@ cd backend
 uv venv --python 3.11 .venv && uv pip install -e ".[dev]" --python .venv
 
 .venv/Scripts/python -m pytest                      # everything
-.venv/Scripts/python -m pytest -m "not db"          # no PostgreSQL needed
+.venv/Scripts/python -m pytest -m "not db and not llm"  # no PostgreSQL or model needed
 ```
 
-Tests come in two tiers. The pure tier (parsing, chunking, selection, fusion,
-confidence, configuration) needs nothing and must always pass. The `db` tier
-needs PostgreSQL and **skips with an explanatory message** when it is absent,
-rather than failing and drowning out real regressions.
+Tests come in three tiers. The **pure** tier (parsing, chunking, selection,
+fusion, confidence, configuration, provider fallback policy, routing,
+citation validation) needs nothing and must always pass -- 112 tests. The
+**`db`** tier needs PostgreSQL and the **`llm`** tier needs a live model
+provider (Ollama by default); both **skip with an explanatory message** when
+their dependency is absent, rather than failing and drowning out real
+regressions. Current counts: 133 pure + db tests, plus 4 tests that exercise
+the full chat API against a real PostgreSQL and a real Ollama together
+(`db and llm`).
 
 To run the `db` tier locally:
 
@@ -296,6 +372,10 @@ docker compose up -d db
 docker exec lenny-growth-assistant-db-1 psql -U lenny -d postgres -c "CREATE DATABASE lenny_test;"
 cd backend && .venv/Scripts/python -m pytest
 ```
+
+The `llm` tier additionally needs Ollama running with `qwen2.5:7b-instruct`
+pulled (see [Prerequisites](#prerequisites)); it is what proves the SSE chat
+endpoint and session isolation against the real system, not a mock of it.
 
 ---
 
@@ -310,6 +390,9 @@ cd backend && .venv/Scripts/python -m pytest
 | Containers cannot reach Ollama | `host.docker.internal` unavailable (some Linux setups) | Set `OLLAMA_BASE_URL=http://172.17.0.1:11434` |
 | `database_unavailable` errors | Postgres not up | `docker compose ps db`; check `DATABASE_URL` |
 | Ingestion is very slow | Embedding on CPU | Lower `INGEST_MAX_EPISODES`, or raise `EMBEDDING_BATCH_SIZE` |
+| `llm: unavailable` in `/health/detail` | Model not pulled, or Ollama down | `ollama pull qwen2.5:7b-instruct`; `ollama serve` |
+| Chat answers are slow to start | Local 7B model, cold load | Expected -- watch the SSE `phase` events; the UI is designed around this (checkpoint 4) |
+| A cloud provider returns `provider_unavailable` | Missing or wrong API key | Check `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in `.env`; `/health/detail`'s `llm.reason` says which |
 
 Every log line is one JSON object with a `request_id` that is also returned in
 the `X-Request-ID` response header, so a user-visible failure can be traced to

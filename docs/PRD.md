@@ -56,7 +56,7 @@ projected production numbers, which would be invented.
 
 | # | Metric | Target | How it is measured | Status |
 |---|---|---|---|---|
-| **M1** | **Grounded answer rate** — answers that cite at least one real transcript passage and make no uncited factual claim | ≥ 90% of in-corpus golden questions | Citation validation against retrieved chunk IDs | Checkpoint 2 |
+| **M1** | **Grounded answer rate** — answers that cite at least one real transcript passage and make no uncited factual claim | ≥ 90% of in-corpus golden questions | `app.evals.grounding_eval`, live model | **100% (12/12)** on `qwen2.5:7b-instruct` |
 | **M2** | **Honest refusal rate** — out-of-corpus questions declined rather than answered | ≥ 90% | Golden set, out-of-corpus population | **100% (8/8)** at threshold 0.48 |
 | **M3** | **Retrieval recall@6** — an expected episode appears in the top 6 | ≥ 85% | `app.evals.retrieval_eval` | **100% (11/11)** |
 | **M4** | **Time to first useful answer**, cold start to cited answer | < 2 min | Manual test plan | Checkpoint 4 |
@@ -191,15 +191,15 @@ documented and demonstrable.
 | Retrieval | Relevant passage ranks above irrelevant on a live index | `test_db_retrieval.py` |
 | Retrieval | Recall@6 ≥ 85% on the golden set | `app.evals.retrieval_eval` |
 | Retrieval | Degrades to lexical when embeddings are unavailable, and reports it | Test with unreachable Ollama |
-| Grounding | Every citation marker maps to a retrieved chunk | Checkpoint 2 |
+| Grounding | Every citation marker maps to a retrieved chunk | `test_citations.py`, `test_knowledge_qa.py` |
 | Refusal | Out-of-corpus questions refused ≥ 90% | Golden set |
-| Sessions | Two sessions never share context | Checkpoint 2 |
+| Sessions | Two sessions never share context | `test_db_sessions.py`, `test_api_chat.py` (live) |
 | Persistence | Conversations, sessions, timestamps, metadata in PostgreSQL | Schema tests |
 | API | Every error uses one envelope with a stable code | `test_api_health.py` |
 | Health | Reports per-dependency status without crashing when deps are down | `test_api_health.py` |
 | Ship 30 | ~1,250 words with required structure | Checkpoint 3 |
 | Artifacts | Script injection neutralised; viewer isolated | Checkpoint 3 sanitiser suite |
-| Model toggle | Provider switch requires no code change | Checkpoint 2 |
+| Model toggle | Provider switch requires no code change | `/api/provider`, `/health/detail` |
 | Deployment | Fresh clone runs by documented steps alone | Checkpoint 5 |
 
 ---
@@ -212,7 +212,7 @@ unknowns first, while there is still time to change approach.
 | # | Checkpoint | Why here | Status |
 |---|---|---|---|
 | 1 | **Knowledge spine** — schema, ingestion, hybrid retrieval, health, errors, logging, eval harness | Nothing downstream is trustworthy if retrieval is weak, and retrieval cannot be rescued later by better prompting | **Complete** |
-| 2 | **Provider abstraction, agent runtime, grounded chat** — LLM interface, routing, RAG skill, sessions, streaming | Where a small local model breaks. Retiring that risk early leaves room to adapt | Next |
+| 2 | **Provider abstraction, agent runtime, grounded chat** — LLM interface, routing, RAG skill, sessions, streaming | Where a small local model breaks. Retiring that risk early leaves room to adapt | **Complete** |
 | 3 | **Ship 30 and artifact skills** — structured essay generation, sanitiser, artifact persistence | Depends on a working grounded answer to build on | |
 | 4 | **Frontend** — chat, sources, artifact viewer, states, accessibility | Built against a stable streaming API to avoid rework | |
 | 5 | **Operations, documentation, final gate** — hardening, observability, docs, audit, fresh-evaluator test | Verification is worth most when there is a complete system to verify | |
@@ -239,3 +239,40 @@ Notable findings, in full in
   index. Full numbers in `docs/retrieval-eval-report.json`. This is why the
   eval harness shipped in checkpoint 1 rather than at the end -- it was needed
   to make the decision, not to decorate a report after the fact.
+
+### Checkpoint 2 outcome
+
+Delivered: a provider abstraction (`app/llm/`) for Ollama, Anthropic and
+OpenAI with a documented fallback policy; a shared skill contract
+(`app/agent/contracts.py`) run through an in-process runtime, after evaluating
+and rejecting the Claude Agent SDK for this system; a hybrid intent router;
+the grounded Q&A skill with citation extraction, validation and repair;
+sessions/messages persistence with proven per-session isolation; SSE streaming
+with phase events; and an extension of the eval harness (`grounding_eval.py`)
+that measures M1 against a live model instead of leaving it as a target.
+56 new automated tests (133 pure/db total, plus 4 live end-to-end tests
+against real PostgreSQL and Ollama).
+
+Notable findings, in full in
+[`agent-transcripts/checkpoint-2-agent-runtime.md`](../agent-transcripts/checkpoint-2-agent-runtime.md):
+
+- **The Claude Agent SDK was evaluated, not assumed.** Its published package
+  (`claude-agent-sdk==0.2.152`) was downloaded and inspected directly: its only
+  transport spawns the Claude Code CLI as a subprocess, its wheels vendor that
+  CLI binary (94 MB for win_amd64, against a 0.33 MB sdist), and it is
+  Claude-only — none of which fit a system whose default path is Ollama and
+  whose only capability surface is a fixed retrieve → generate → validate
+  pipeline. A ~60-line direct runtime was built instead, behind an interface
+  that could still host a Claude-specific runtime later without touching any
+  skill or API code.
+- **M1 measured 75% on the first live run**, against a 90% target — the
+  dominant failure was not a hallucinated citation but an uncited "in summary"
+  paragraph tacked onto an otherwise well-cited answer. The citation-retry gate
+  was only triggered by a *total absence* of citations, so a properly-cited
+  answer with one uncited trailing paragraph passed straight through
+  unretried. Widening the retry trigger to "not fully grounded" (while keeping
+  the *refusal* trigger at the stricter "no valid citation at all", so a
+  partially-uncited-but-real answer is still shown rather than discarded)
+  raised the measured rate to **100% (12/12)** on the same golden set and
+  model, confirmed by re-running `app.evals.grounding_eval` end to end. Full
+  numbers in `docs/grounding-eval-report.json`.

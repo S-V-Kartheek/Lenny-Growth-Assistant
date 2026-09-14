@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Response
 
-from app.api.deps import EmbedderDep, SettingsDep
+from app.api.deps import EmbedderDep, GatewayDep, SettingsDep
 from app.db.engine import check_database
 from app.retrieval.retriever import knowledge_base_stats
 
@@ -57,10 +57,13 @@ async def ready(response: Response) -> dict[str, Any]:
 
 
 @router.get("/health/detail", summary="Per-dependency diagnostics")
-async def detail(settings: SettingsDep, embedder: EmbedderDep) -> dict[str, Any]:
+async def detail(
+    settings: SettingsDep, embedder: EmbedderDep, gateway: GatewayDep
+) -> dict[str, Any]:
     embeddings_ok = await embedder.available()
     database = await check_database()
     knowledge = await _knowledge_status()
+    llm = await gateway.health()
 
     return {
         "service": settings.app_name,
@@ -74,6 +77,10 @@ async def detail(settings: SettingsDep, embedder: EmbedderDep) -> dict[str, Any]
             "impact": None
             if embeddings_ok
             else "Semantic retrieval is disabled; search falls back to lexical only.",
+        },
+        "llm": {
+            **llm.as_dict(),
+            "fallback_provider": gateway.fallback.name if gateway.fallback else None,
         },
         "corpus": {
             "repo": settings.corpus_repo,

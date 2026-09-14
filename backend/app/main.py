@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import health
+from app.api import health, sessions
 from app.config import Settings, get_settings
 from app.db.engine import dispose_engine, init_engine
 from app.db.migrate import run_migrations
@@ -106,6 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _register_error_handlers(app)
 
     app.include_router(health.router)
+    app.include_router(sessions.router)
+    app.include_router(sessions.provider_router)
     return app
 
 
