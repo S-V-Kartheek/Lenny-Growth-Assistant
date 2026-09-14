@@ -20,32 +20,24 @@ one is not.
 from __future__ import annotations
 
 import logging
-import re
 import time
 from collections.abc import AsyncIterator
 
 from app.agent.citations import GroundingReport, validate_and_repair
 from app.agent.contracts import Intent, Phase, Skill, SkillContext, SkillEvent, SkillResult
 from app.agent.prompts import build_grounded_messages, build_refusal_messages
+
+# Re-exported below for the tests and callers that already import them from here.
+from app.agent.sources import build_retrieval_query, sources_payload
 from app.config import Settings
 from app.errors import AppError
 from app.llm.base import ChatMessage
 from app.llm.registry import LLMGateway
-from app.retrieval.retriever import RetrievalResult, RetrievedChunk, Retriever
+from app.retrieval.retriever import RetrievalResult, Retriever
 
 log = logging.getLogger("app.agent.skills.knowledge_qa")
 
-# Phrasings that only make sense relative to the previous turn. A follow-up like
-# "explain that second point" retrieves nothing useful on its own, because the
-# words that carry the topic are in the *previous* message.
-_ANAPHORIC = re.compile(
-    r"\b(that|this|those|these|it|they|them|he|she|his|her|the (?:first|second|third|last|next)"
-    r"\s+(?:point|one|part|idea)|more|deeper|expand|elaborate|instead|why not)\b",
-    re.IGNORECASE,
-)
-# Above this length a message carries enough of its own topic words that
-# borrowing the previous question adds noise rather than signal.
-_FOLLOW_UP_MAX_WORDS = 18
+__all__ = ["KnowledgeQASkill", "build_retrieval_query", "sources_payload"]
 
 STATIC_REFUSAL = (
     "I could not find anything in the indexed Lenny's Podcast transcripts that "
@@ -59,24 +51,6 @@ UNGROUNDED_REFUSAL = (
     "anchored to them, so I am not going to show one. The sources below are what "
     "the search returned -- they may still be worth reading directly."
 )
-
-
-def build_retrieval_query(message: str, history: list[ChatMessage]) -> str:
-    """Resolve a follow-up against the previous user turn, when it needs it.
-
-    Deliberately a heuristic and not a model call: query rewriting on a local 7B
-    costs more latency than the retrieval it feeds, and gets the easy cases
-    (which are most cases) no more right than concatenation does. When the
-    heuristic is wrong the cost is a slightly noisier query, not a wrong answer.
-    """
-    if len(message.split()) > _FOLLOW_UP_MAX_WORDS or not _ANAPHORIC.search(message):
-        return message
-    previous = next(
-        (m.content for m in reversed(history) if m.role == "user"), None
-    )
-    if not previous:
-        return message
-    return f"{previous} {message}"
 
 
 class KnowledgeQASkill(Skill):
@@ -119,7 +93,7 @@ class KnowledgeQASkill(Skill):
             context_tokens=self._gateway.primary.context_tokens,
             max_output_tokens=settings.llm_max_output_tokens,
         )
-        sources = _sources_payload(retrieval.chunks[:used], retrieval)
+        sources = sources_payload(retrieval.chunks[:used], retrieval)
         yield SkillEvent(
             kind="sources",
             data={
@@ -229,7 +203,7 @@ class KnowledgeQASkill(Skill):
         nothing" is far more useful when the user can see *what* was closest and
         judge for themselves that it really is off-topic.
         """
-        nearest = _sources_payload(retrieval.chunks[:3], retrieval, cited=False)
+        nearest = sources_payload(retrieval.chunks[:3], retrieval, cited=False)
         yield SkillEvent(
             kind="sources",
             data={
@@ -313,19 +287,3 @@ class KnowledgeQASkill(Skill):
             log.warning("citation_retry_failed", extra={"error_type": type(exc).__name__})
             return "", GroundingReport(source_count=used)
         return validate_and_repair(completion.text.strip(), used)
-
-
-def _sources_payload(
-    chunks: list[RetrievedChunk], retrieval: RetrievalResult, *, cited: bool = False
-) -> list[dict[str, object]]:
-    """Source cards, numbered to match the [S#] markers the model was given."""
-    return [
-        {
-            "index": position,
-            "label": f"S{position}",
-            "cited": cited,
-            "retrieval_method": retrieval.method,
-            **chunk.as_dict(),
-        }
-        for position, chunk in enumerate(chunks, start=1)
-    ]

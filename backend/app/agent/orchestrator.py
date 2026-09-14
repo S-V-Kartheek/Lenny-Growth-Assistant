@@ -13,8 +13,9 @@ from collections.abc import AsyncIterator
 from app.agent.contracts import Phase, Skill, SkillContext, SkillEvent
 from app.agent.router import IntentRouter
 from app.agent.runtime import select_runtime
+from app.agent.skills.artifact import ArtifactSkill
 from app.agent.skills.knowledge_qa import KnowledgeQASkill
-from app.agent.skills.planned import artifact_placeholder, ship30_placeholder
+from app.agent.skills.ship30_essay import Ship30EssaySkill
 from app.config import Settings
 from app.llm.registry import LLMGateway
 from app.retrieval.retriever import Retriever
@@ -32,8 +33,8 @@ class Agent:
             str(s.intent): s
             for s in (
                 KnowledgeQASkill(settings, gateway, retriever),
-                ship30_placeholder(),
-                artifact_placeholder(),
+                Ship30EssaySkill(settings, gateway, retriever),
+                ArtifactSkill(settings, gateway, retriever),
             )
         }
 

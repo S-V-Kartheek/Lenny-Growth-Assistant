@@ -9,13 +9,11 @@ It runs entirely on your machine: **Ollama** for the model, **PostgreSQL +
 pgvector** for the index, **FastAPI** for the API. Cloud providers (Anthropic,
 OpenAI) are a configuration change, not a code change.
 
-> **Status:** Checkpoint 2 of 5 complete — knowledge spine (ingestion, hybrid
-> retrieval, schema, health, evaluation harness) plus a provider-agnostic LLM
-> layer, a hybrid intent router, a grounded Q&A skill with citation validation,
-> sessions/messages persistence, and SSE streaming with phase events. The Ship
-> 30 essay skill, artifact generation and the frontend land in later
-> checkpoints. This README documents only what is actually implemented and
-> verified today.
+> **Status:** Checkpoint 3 of 5 complete — knowledge spine, provider-agnostic
+> LLM layer, grounded Q&A, and now a structured Ship 30 essay skill, Markdown
+> and sanitised-HTML artifact generation, and an isolated artifact viewer
+> endpoint. The frontend lands in checkpoint 4. This README documents only
+> what is actually implemented and verified today.
 
 ---
 
@@ -58,20 +56,24 @@ golden set, not guessed — see [Evaluating retrieval](#evaluating-retrieval).
       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
       │  Retrieval   │   │  Agent layer │   │  PostgreSQL  │
       │  lexical +   │   │  router ·    │   │  sessions ·  │
-      │  semantic    │   │  skills      │   │  messages    │
-      │  → RRF fuse  │   │ (skill 3:    │   │  + pgvector  │
-      └──────┬───────┘   │  checkpt 3)  │   └──────────────┘
-             │            └──────┬───────┘
-             │                   │
-             │            ┌──────▼─────┐
-             │            │ LLM layer  │  Ollama / Anthropic / OpenAI
-             │            └────────────┘
-             ▼
-      ┌──────────────────────────────────────┐
-      │  Ingestion                           │
-      │  pinned tarball → parse → chunk →    │
-      │  index (tsvector + embeddings)       │
-      └──────────────────────────────────────┘
+      │  semantic    │   │  skills:     │   │  messages ·  │
+      │  → RRF fuse  │   │  Q&A, essay, │   │  artifacts   │
+      └──────┬───────┘   │  artifact    │   │  + pgvector  │
+             │            └──────┬───────┘   └──────────────┘
+             │                   │                   ▲
+             │            ┌──────▼─────┐             │
+             │            │ LLM layer  │  Ollama /    │ sanitised
+             │            │            │  Anthropic / │ artifact
+             │            └────────────┘  OpenAI      │ content
+             ▼                                        │
+      ┌──────────────────────────────────────┐        │
+      │  Ingestion                           │        │
+      │  pinned tarball → parse → chunk →    │        │
+      │  index (tsvector + embeddings)       │        │
+      └──────────────────────────────────────┘        │
+                                                        │
+      HTML artifact → allow-list sanitiser (nh3) → independent
+      re-verify → reject or persist ────────────────────┘
 ```
 
 Full detail, including the database schema and the reasoning behind each
@@ -93,9 +95,11 @@ backend/
     ingestion/          fetch → parse → chunk → select → pipeline
     retrieval/          Hybrid retriever, embeddings, inspector CLI
     llm/                Provider abstraction: Ollama · Anthropic · OpenAI
-    agent/              Skill contract, router, runtime, grounded Q&A skill
-    services/           Session/message persistence, chat orchestration
-    evals/              Golden set + retrieval + grounding evaluation harness
+    agent/              Skill contract, router, runtime, skills (Q&A, essay,
+                        artifact), essay contract, HTML/Markdown sanitiser
+    api/artifacts.py    List/get artifacts, isolated HTML document endpoint
+    services/           Session/message + artifact persistence, orchestration
+    evals/              Golden set + retrieval + grounding + essay evaluation
   tests/                Pure tests (always run) + db-marked + llm-marked tests
 docker-compose.yml      db · ingest · api
 .env.example            Every setting, documented, safe defaults
@@ -286,19 +290,22 @@ question and its score, is at
 ## The conversational API
 
 ```
-POST   /api/sessions               create a session
-GET    /api/sessions               list sessions
-GET    /api/sessions/{id}          full message history, with sources
-POST   /api/sessions/{id}/messages post a message, stream the answer (SSE)
-GET    /api/provider               which provider/model is answering right now
+POST   /api/sessions                       create a session
+GET    /api/sessions                       list sessions
+GET    /api/sessions/{id}                  full message history, with sources
+POST   /api/sessions/{id}/messages         post a message, stream the answer (SSE)
+GET    /api/provider                       which provider/model is answering right now
+GET    /api/sessions/{id}/artifacts        list a session's artifacts
+GET    /api/artifacts/{id}                 one artifact, sanitised content only
+GET    /api/artifacts/{id}/document        the isolated HTML document, for a sandboxed iframe
 ```
 
 A message is routed to one of three intents -- `knowledge_qa`, `ship30_essay`,
 `artifact` -- by a hybrid router: fast deterministic rules for unambiguous
 phrasing, falling back to one small LLM call only when the rules disagree.
-`ship30_essay` and `artifact` are registered and routable today; they answer
-with an explicit "this lands in checkpoint 3" placeholder rather than silently
-running Q&A instead, so routing accuracy is measured honestly.
+For an artifact request, a second routing decision picks the output format
+(Markdown or HTML) from explicit cues in the message, with ties going to
+Markdown -- the lower-risk path.
 
 `knowledge_qa` is the grounded answer skill: it retrieves, refuses outright if
 confidence is below `RETRIEVAL_MIN_CONFIDENCE`, otherwise prompts the model
@@ -308,6 +315,39 @@ an answer that ends up with no valid citation at all is retried once and then
 refused rather than shown. See
 [`agent-transcripts/checkpoint-2-agent-runtime.md`](agent-transcripts/checkpoint-2-agent-runtime.md)
 for why an in-process runtime was used instead of the Claude Agent SDK.
+
+`ship30_essay` writes a ~1,250-word Ship 30 for 30 essay -- hook, skimmable
+headings and bullets, selective bold, a specific takeaway -- grounded in the
+same retrieved passages as a normal answer. A single free-form "write me
+1,250 words" prompt does not work reliably on a 7B model (checkpoint 1), so
+generation is structured: a schema-validated outline (one repair attempt,
+then a deterministic fallback outline) is written first, then each
+part -- hook, each section, the takeaway -- is generated and citation-checked
+separately, then assembled by code (headings are written by the skill, not
+the model, so a required element cannot be missing), then repaired
+(over-bolding and over-length are fixed deterministically; under-length gets
+one targeted expansion call) and verified.
+
+`artifact` produces a Markdown document or a sanitised HTML/CSS page -- a
+checklist, one-pager or landing page -- from the conversation. Generated HTML
+is treated as hostile by default (PRD assumption A6): it passes through an
+allow-list sanitiser (`nh3`, the same `html5ever` tokenizer browsers use) and
+then an independent, unrelated re-parse that checks the *output* against the
+same policy and rejects the artifact outright if the two disagree, rather
+than trusting one implementation. The served document
+(`/api/artifacts/{id}/document`) carries its own `Content-Security-Policy`
+(`default-src 'none'`, no `script-src` at all) and is designed to be embedded
+in an iframe with `sandbox` and no `allow-same-origin` -- so even a total
+sanitiser bypass would land in an opaque origin with no script execution, no
+parent-page access, and no cookies or storage. What is blocked and what is
+allowed is documented in full in `app/agent/sanitize.py`'s module docstring,
+and exercised by 129 adversarial tests in `tests/test_sanitize.py` (script
+tags in a dozen forms, event-handler attributes, obfuscated `javascript:`/
+`data:`/`blob:` URLs, CSS-based exfiltration via `url()`/`expression()`/
+`-moz-binding`, and mutation-XSS/foreign-content payloads).
+`raw_content` is retained on the `artifacts` table for debugging only --
+`ArtifactRow`, the shape every API response is built from, has no field for
+it at all, so a careless "serialise everything" change cannot leak it.
 
 The response streams as Server-Sent Events with phase events
 (`routing` → `retrieving` → `generating` → `validating` → `done`) so a slow
@@ -343,6 +383,25 @@ model, without moving M2/M3. Full account in
 per-question numbers in
 [`docs/grounding-eval-report.json`](docs/grounding-eval-report.json).
 
+### Evaluating the Ship 30 essay skill
+
+```bash
+cd backend && .venv/Scripts/python -m app.evals.essay_eval --limit 3
+```
+
+Runs the real `Ship30EssaySkill` against the live index and model for
+in-corpus golden questions, then measures each essay two ways: a **structure
+pass rate** (`app.agent.essay.evaluate_structure` -- word-count band, title,
+hook, section headings, bullets, selective bold, takeaway, all defined once
+and applied identically by the skill's own repair logic, this harness, and
+the tests) and a **grounded rate** -- the essay analogue of M1, and the one
+that must not regress. Essays are slow on a 7B model (seven sequential model
+calls, minutes each), so `--limit` runs a subset while iterating; omit it for
+a full run. See
+[`agent-transcripts/checkpoint-3-ship30-and-artifacts.md`](agent-transcripts/checkpoint-3-ship30-and-artifacts.md)
+for a real run's numbers, including a genuine 91-word hook that the harness's
+first version wrongly rejected -- and the fix.
+
 ---
 
 ## Tests
@@ -357,13 +416,14 @@ uv venv --python 3.11 .venv && uv pip install -e ".[dev]" --python .venv
 
 Tests come in three tiers. The **pure** tier (parsing, chunking, selection,
 fusion, confidence, configuration, provider fallback policy, routing,
-citation validation) needs nothing and must always pass -- 112 tests. The
-**`db`** tier needs PostgreSQL and the **`llm`** tier needs a live model
-provider (Ollama by default); both **skip with an explanatory message** when
-their dependency is absent, rather than failing and drowning out real
-regressions. Current counts: 133 pure + db tests, plus 4 tests that exercise
-the full chat API against a real PostgreSQL and a real Ollama together
-(`db and llm`).
+citation validation, the essay structure/outline contract, the artifact
+skill, and the adversarial sanitiser suite) needs nothing and must always
+pass -- 340 tests. The **`db`** tier needs PostgreSQL and the **`llm`** tier
+needs a live model provider (Ollama by default); both **skip with an
+explanatory message** when their dependency is absent, rather than failing
+and drowning out real regressions. Current counts: 373 pure + db tests, plus
+4 tests that exercise the full chat API against a real PostgreSQL and a real
+Ollama together (`db and llm`) -- 385 total.
 
 To run the `db` tier locally:
 

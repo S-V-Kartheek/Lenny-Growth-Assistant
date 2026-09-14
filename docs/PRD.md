@@ -2,7 +2,7 @@
 
 **Status:** living document, updated as checkpoints land
 **Owner:** Forward-Deployed Engineer (this engagement)
-**Last updated:** checkpoint 1
+**Last updated:** checkpoint 3
 
 ---
 
@@ -197,8 +197,8 @@ documented and demonstrable.
 | Persistence | Conversations, sessions, timestamps, metadata in PostgreSQL | Schema tests |
 | API | Every error uses one envelope with a stable code | `test_api_health.py` |
 | Health | Reports per-dependency status without crashing when deps are down | `test_api_health.py` |
-| Ship 30 | ~1,250 words with required structure | Checkpoint 3 |
-| Artifacts | Script injection neutralised; viewer isolated | Checkpoint 3 sanitiser suite |
+| Ship 30 | ~1,250 words with required structure | `app.agent.essay.evaluate_structure`, `test_essay.py`, `app.evals.essay_eval` against a live model |
+| Artifacts | Script injection neutralised; viewer isolated | `test_sanitize.py` (129 adversarial tests), `test_db_artifacts.py`, isolated document endpoint |
 | Model toggle | Provider switch requires no code change | `/api/provider`, `/health/detail` |
 | Deployment | Fresh clone runs by documented steps alone | Checkpoint 5 |
 
@@ -213,7 +213,7 @@ unknowns first, while there is still time to change approach.
 |---|---|---|---|
 | 1 | **Knowledge spine** — schema, ingestion, hybrid retrieval, health, errors, logging, eval harness | Nothing downstream is trustworthy if retrieval is weak, and retrieval cannot be rescued later by better prompting | **Complete** |
 | 2 | **Provider abstraction, agent runtime, grounded chat** — LLM interface, routing, RAG skill, sessions, streaming | Where a small local model breaks. Retiring that risk early leaves room to adapt | **Complete** |
-| 3 | **Ship 30 and artifact skills** — structured essay generation, sanitiser, artifact persistence | Depends on a working grounded answer to build on | |
+| 3 | **Ship 30 and artifact skills** — structured essay generation, sanitiser, artifact persistence | Depends on a working grounded answer to build on | **Complete** |
 | 4 | **Frontend** — chat, sources, artifact viewer, states, accessibility | Built against a stable streaming API to avoid rework | |
 | 5 | **Operations, documentation, final gate** — hardening, observability, docs, audit, fresh-evaluator test | Verification is worth most when there is a complete system to verify | |
 
@@ -276,3 +276,58 @@ Notable findings, in full in
   raised the measured rate to **100% (12/12)** on the same golden set and
   model, confirmed by re-running `app.evals.grounding_eval` end to end. Full
   numbers in `docs/grounding-eval-report.json`.
+
+### Checkpoint 3 outcome
+
+Delivered: a structured Ship 30 for 30 essay skill (schema-validated outline
+→ section-wise generation → code-assembled structure → deterministic repair
+→ verification, rather than a single free-form prompt — see PRD 1.6, "Local
+model quality"); a Markdown/HTML artifact skill with format chosen from
+explicit cues before generation; a from-scratch HTML/CSS sanitiser (`nh3`,
+approved for installation before use, plus an independent stdlib re-parse
+that verifies the sanitiser's own output and rejects an artifact outright on
+disagreement); artifact persistence on the existing `artifacts` table with
+atomically-versioned rows and no `raw_content` field reachable through any
+API response; and three artifact endpoints including an isolated
+document view carrying its own `Content-Security-Policy` and a `sandbox`
+contract with no `allow-same-origin`. 129 adversarial sanitiser tests, 252
+other new tests (381 → 385 pure/db total plus the existing 4 live tests),
+and an extension of the eval harness (`essay_eval.py`) that measures the
+essay's structural contract and grounding rate against a live model instead
+of leaving either as an unverified target.
+
+Notable findings, in full in
+[`agent-transcripts/checkpoint-3-ship30-and-artifacts.md`](../agent-transcripts/checkpoint-3-ship30-and-artifacts.md):
+
+- **Live end-to-end verification — not the test suite — found a real
+  retrieval bug.** A grounded question answered normally (confidence 0.4976),
+  but asking to turn that same answer into an HTML landing page in the next
+  turn of the same session came back unable to find supporting evidence at
+  all. The follow-up heuristic from checkpoint 2 correctly detected "that" as
+  a reference to the previous turn and concatenated the two messages for
+  retrieval — exactly right for a follow-up *question*, but an artifact
+  request is almost entirely an instruction about form ("HTML landing page
+  with CSS"), and those words are real, strong lexical signals toward
+  unrelated passages in the corpus. Measured directly against the live
+  index: the same question alone scored 0.4976; with the format instruction
+  appended, 0.4177 — crossing the 0.48 refusal threshold. Fixed by having the
+  generative skills strip format/command vocabulary from the retrieval query,
+  and falling back to the previous question *alone* (not a diluted
+  concatenation) when nothing but connector debris survives that strip.
+  Re-verified against the live API: the same two-turn conversation now
+  produces a grounded artifact with real citations.
+- **A full live essay generation exposed a self-contradicting prompt.** The
+  hook-writing prompt asked the model for "about 140 words," while the
+  structure validator only accepted hooks up to 90 words — a target 50 words
+  past its own acceptance cap. A real, well-written 91-word hook (otherwise a
+  fully passing essay: 1,097 words, 5 headings, 6 bullets, 22 valid
+  citations) failed structure on this alone. Corrected both sides to agree
+  (target lowered to 100, cap raised to 120, chosen because the PRD requires
+  *a* hook, not a specific word count) and re-evaluated the same real essay
+  output against the fixed contract without regenerating it: zero issues.
+- **`nh3` rejects the exact attribute it adds itself.** `link_rel` makes nh3
+  write `rel` on every link unconditionally, and it refuses to also see `rel`
+  in the caller's attribute allow-list — so the independent verifier, built
+  against the model-facing policy alone, flagged nh3's own output on every
+  link. Fixed by separating "what a model may request" from "what nh3 injects
+  regardless," with the verifier checking the union.

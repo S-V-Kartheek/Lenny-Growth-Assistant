@@ -58,3 +58,42 @@ def test_rules_prefer_generative_intent_over_a_bare_question_cue() -> None:
     decision = route_by_rules("How should I think about activation? Put it in an HTML one-pager.")
     assert decision is not None
     assert decision.intent == Intent.ARTIFACT
+
+
+@pytest.mark.parametrize(
+    "case",
+    [c for c in golden.routing if c.kind],
+    ids=[c.id for c in golden.routing if c.kind],
+)
+def test_artifact_format_matches_the_golden_fixture(case) -> None:
+    """Routing has two levels once artifacts are real: which skill runs, and
+    which format that skill produces. The second level is a routing decision
+    too, so it is measured against the same golden set rather than left to a
+    unit test of the regex.
+    """
+    from app.agent.skills.artifact import choose_kind
+
+    assert choose_kind(case.text) == case.kind, (
+        f"{case.text!r} chose {choose_kind(case.text)}, expected {case.kind}"
+    )
+
+
+def test_every_intent_has_a_real_skill_registered() -> None:
+    """Checkpoint 2 registered truthful placeholders for the two unbuilt
+    skills. This asserts they are gone: an intent that routes somewhere useless
+    would make the routing numbers above meaningless.
+    """
+    from app.agent.orchestrator import Agent
+    from app.agent.skills.artifact import ArtifactSkill
+    from app.agent.skills.knowledge_qa import KnowledgeQASkill
+    from app.agent.skills.ship30_essay import Ship30EssaySkill
+    from app.config import Settings
+
+    agent = Agent(Settings(_env_file=None), gateway=None, retriever=None)
+    registered = {d["intent"] for d in agent.describe_skills()}
+    assert registered == {str(i) for i in Intent}
+    assert {type(s) for s in agent._skills.values()} == {
+        KnowledgeQASkill,
+        Ship30EssaySkill,
+        ArtifactSkill,
+    }

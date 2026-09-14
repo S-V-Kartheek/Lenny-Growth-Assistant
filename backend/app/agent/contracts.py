@@ -74,10 +74,22 @@ class SkillResult:
     refused: bool = False
     sources: list[dict[str, Any]] = field(default_factory=list)
     grounding: dict[str, Any] = field(default_factory=dict)
+    # Set only by the artifact skill. Carries `raw_content` internally so the
+    # persistence layer can store the unsanitised output for debugging, but
+    # `as_dict()` strips it: the wire contract is that a client is only ever
+    # handed the sanitised `content` (PRD 2.4, docs/architecture.md#artifacts).
+    artifact: dict[str, Any] | None = None
     provider: str | None = None
     model: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     latency_ms: float = 0.0
+
+    @property
+    def artifact_for_client(self) -> dict[str, Any] | None:
+        """The artifact minus anything a viewer must never receive."""
+        if self.artifact is None:
+            return None
+        return {k: v for k, v in self.artifact.items() if k != "raw_content"}
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -86,6 +98,7 @@ class SkillResult:
             "refused": self.refused,
             "sources": self.sources,
             "grounding": self.grounding,
+            "artifact": self.artifact_for_client,
             "provider": self.provider,
             "model": self.model,
             "usage": self.usage,

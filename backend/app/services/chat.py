@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 from app.agent.contracts import SkillContext, SkillEvent
 from app.agent.orchestrator import Agent
 from app.llm.base import ChatMessage
-from app.services import sessions
+from app.services import artifacts, sessions
 
 log = logging.getLogger("app.services.chat")
 
@@ -52,7 +52,7 @@ async def stream_turn(
         yield event
         if event.kind == "result" and event.result is not None:
             result = event.result
-            await sessions.append_message(
+            message_id = await sessions.append_message(
                 session_id,
                 "assistant",
                 result.content,
@@ -64,6 +64,40 @@ async def stream_turn(
                 grounding=result.grounding or None,
                 sources=result.sources or None,
             )
+            if result.artifact:
+                # Persisted here rather than inside the skill because this is the
+                # first moment `message_id` exists -- and because a skill that
+                # opened its own transaction could not be run in a test without
+                # PostgreSQL. A failure to store the artifact must not lose the
+                # message that was already written, so it is caught and logged.
+                try:
+                    row = await artifacts.create_artifact(
+                        session_id,
+                        kind=result.artifact["kind"],
+                        title=result.artifact["title"],
+                        content=result.artifact["content"],
+                        raw_content=result.artifact.get("raw_content"),
+                        sanitization=result.artifact.get("sanitization"),
+                        message_id=message_id,
+                    )
+                    yield SkillEvent(
+                        kind="artifact_saved",
+                        data={
+                            "id": row.id,
+                            "kind": row.kind,
+                            "title": row.title,
+                            "version": row.version,
+                            "document_url": (
+                                f"/api/artifacts/{row.id}/document"
+                                if row.kind == "html"
+                                else None
+                            ),
+                        },
+                    )
+                except Exception:  # noqa: BLE001 - the turn itself already succeeded
+                    log.exception(
+                        "artifact_persist_failed", extra={"session_id": session_id}
+                    )
         elif event.kind == "error" and event.data is not None:
             await sessions.append_message(
                 session_id,

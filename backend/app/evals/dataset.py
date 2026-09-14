@@ -25,6 +25,9 @@ class RoutingCase:
     id: str
     text: str
     intent: str
+    # For artifact cases only: the output format the request should select.
+    # None means the case does not pin a format.
+    kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +60,12 @@ def load_golden_set(path: Path | None = None) -> GoldenSet:
             for item in raw.get("out_of_corpus", [])
         ],
         routing=[
-            RoutingCase(id=item["id"], text=item["text"], intent=item["intent"])
+            RoutingCase(
+                id=item["id"],
+                text=item["text"],
+                intent=item["intent"],
+                kind=item.get("kind"),
+            )
             for item in raw.get("routing", [])
         ],
     )

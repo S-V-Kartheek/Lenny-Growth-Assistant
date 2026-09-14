@@ -113,6 +113,12 @@ routing:
   - {id: r-ship-1, text: "Turn that into a Ship 30 for 30 essay.", intent: ship30_essay}
   - {id: r-ship-2, text: "Write a 1250 word essay about this.", intent: ship30_essay}
   - {id: r-ship-3, text: "Make this into an article I can publish on LinkedIn.", intent: ship30_essay}
-  - {id: r-art-1, text: "Create an HTML landing page for this idea.", intent: artifact}
-  - {id: r-art-2, text: "Give me a product launch checklist as a markdown document.", intent: artifact}
-  - {id: r-art-3, text: "Build me a one-page dashboard mockup in HTML and CSS.", intent: artifact}
+  - {id: r-art-1, text: "Create an HTML landing page for this idea.", intent: artifact, kind: html}
+  - {id: r-art-2, text: "Give me a product launch checklist as a markdown document.", intent: artifact, kind: markdown}
+  - {id: r-art-3, text: "Build me a one-page dashboard mockup in HTML and CSS.", intent: artifact, kind: html}
+  # Routing now has two levels: the intent, and -- for artifacts -- the output
+  # format. These cases pin the second level, which the format cues get wrong
+  # in opposite directions if document-type words are mistaken for format words.
+  - {id: r-art-4, text: "Give me a launch checklist.", intent: artifact, kind: markdown}
+  - {id: r-art-5, text: "Make an HTML one-pager for the launch.", intent: artifact, kind: html}
+  - {id: r-art-6, text: "Turn that into a markdown version of the landing page.", intent: artifact, kind: markdown}
