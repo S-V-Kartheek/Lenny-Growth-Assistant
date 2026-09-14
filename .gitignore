@@ -1,0 +1,43 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Assignment source material (kept local, not part of the deliverable)
+*.docx
+*.pdf
+
+# Corpus cache (downloaded at ingestion time from a pinned upstream commit)
+data/corpus/
+data/*.tar.gz
+backend/data/corpus/
+backend/data/*.tar.gz
+
+# Local tool configuration (per-machine, not part of the deliverable)
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,392 @@
+{
+  "knowledge_base": {
+    "episodes": 40,
+    "chunks": 4448,
+    "embedded": 4448
+  },
+  "retrieval_top_k": 6,
+  "recall_at_k": {
+    "hits": 11,
+    "measurable": 11,
+    "rate": 1.0
+  },
+  "confidence": {
+    "mean_in_corpus": 0.7412,
+    "mean_out_of_corpus": 0.3109,
+    "min_in_corpus": 0.5323,
+    "max_out_of_corpus": 0.471
+  },
+  "current_threshold": {
+    "value": 0.48,
+    "answered_in_corpus": 12,
+    "refused_out_of_corpus": 8,
+    "total_in_corpus": 12,
+    "total_out_of_corpus": 8,
+    "balanced_accuracy": 1.0
+  },
+  "best_threshold": {
+    "value": 0.48,
+    "balanced_accuracy": 1.0,
+    "answered_in_corpus": 12,
+    "refused_out_of_corpus": 8
+  },
+  "outcomes": [
+    {
+      "id": "pmf-framework",
+      "question": "How do I know if my product has found product-market fit?",
+      "answerable": true,
+      "confidence": 0.675,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "todd-jackson",
+        "manik-gupta",
+        "nikhyl-singhal",
+        "jen-abel"
+      ],
+      "expected": [
+        "todd-jackson",
+        "brian-chesky",
+        "dalton-caldwell"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "growth-tactics-fail",
+      "question": "Which growth tactics usually do not work?",
+      "answerable": true,
+      "confidence": 0.7387,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "elena-verna",
+        "gustaf-alstromer",
+        "brian-chesky",
+        "vikrama-dhiman"
+      ],
+      "expected": [
+        "elena-verna"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "strategy-questions",
+      "question": "What questions should a team answer to craft a winning strategy?",
+      "answerable": true,
+      "confidence": 0.634,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "richard-rumelt",
+        "roger-martin",
+        "tobi-lutke",
+        "anneka-gupta",
+        "ethan-smith"
+      ],
+      "expected": [
+        "roger-martin",
+        "richard-rumelt"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "prioritisation",
+      "question": "How should product managers decide what to prioritise on the roadmap?",
+      "answerable": true,
+      "confidence": 0.7023,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "vikrama-dhiman",
+        "ian-mcallister",
+        "manik-gupta",
+        "nikhyl-singhal",
+        "shreyas-doshi"
+      ],
+      "expected": [
+        "shreyas-doshi",
+        "shreyas-doshi-live",
+        "marty-cagan",
+        "ian-mcallister"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "founder-led-sales",
+      "question": "What is the right way to do founder-led sales in the early days?",
+      "answerable": true,
+      "confidence": 0.788,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "jen-abel",
+        "anneka-gupta",
+        "elena-verna",
+        "marc-benioff"
+      ],
+      "expected": [
+        "jen-abel"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "pm-theater",
+      "question": "What is product management theater and why is it harmful?",
+      "answerable": true,
+      "confidence": 0.6047,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "vikrama-dhiman",
+        "marty-cagan",
+        "brian-chesky",
+        "dylan-field"
+      ],
+      "expected": [
+        "marty-cagan",
+        "ray-cao"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "netflix-culture",
+      "question": "How does Netflix build a culture of excellence?",
+      "answerable": true,
+      "confidence": 0.9521,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "elizabeth-stone"
+      ],
+      "expected": [
+        "elizabeth-stone"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "seo-ai-era",
+      "question": "How should companies rethink SEO now that people ask AI assistants?",
+      "answerable": true,
+      "confidence": 0.8658,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "eli-schwartz",
+        "ethan-smith"
+      ],
+      "expected": [
+        "eli-schwartz",
+        "ethan-smith"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "ai-evals",
+      "question": "Why are evals important when building AI products?",
+      "answerable": true,
+      "confidence": 0.878,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "kevin-weil",
+        "hamelshreya",
+        "hamel-husain-shreya-shankar"
+      ],
+      "expected": [
+        "hamel-husain-shreya-shankar",
+        "hamelshreya"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "career-growth",
+      "question": "How do I grow my influence and advance my career as a PM?",
+      "answerable": true,
+      "confidence": 0.7399,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "ian-mcallister",
+        "brandon-chu",
+        "vikrama-dhiman"
+      ],
+      "expected": [
+        "jeffrey-pfeffer",
+        "nikhyl-singhal",
+        "vikrama-dhiman"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "early-startup-ideas",
+      "question": "What are tar pit ideas and how do founders avoid them?",
+      "answerable": true,
+      "confidence": 0.7836,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "dalton-caldwell",
+        "richard-rumelt",
+        "tobi-lutke",
+        "gustaf-alstromer"
+      ],
+      "expected": [
+        "dalton-caldwell",
+        "gustaf-alstromer"
+      ],
+      "recall_hit": true
+    },
+    {
+      "id": "activation-retention",
+      "question": "How should a team think about activation and retention?",
+      "answerable": true,
+      "confidence": 0.5323,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "shreyas-doshi",
+        "elena-verna",
+        "tobi-lutke",
+        "mihika-kapoor",
+        "manik-gupta"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "quantum-db",
+      "question": "What is the best database architecture for a quantum computing company?",
+      "answerable": false,
+      "confidence": 0.4057,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "hamelshreya",
+        "hamel-husain-shreya-shankar",
+        "eli-schwartz",
+        "tobi-lutke",
+        "ben-horowitz"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "k8s-operator",
+      "question": "Which Kubernetes operator should I use for quantum annealing hardware?",
+      "answerable": false,
+      "confidence": 0.3516,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "tobi-lutke",
+        "nick-turley",
+        "michael-truell",
+        "kunal-shah",
+        "dan-shipper",
+        "kevin-weil"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "medical-dosage",
+      "question": "What is the recommended paediatric dosage of amoxicillin for otitis media?",
+      "answerable": false,
+      "confidence": 0.2061,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "bret-taylor",
+        "tobi-lutke",
+        "mike-krieger",
+        "sander-schulhoff"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "tax-law",
+      "question": "How do I file a VAT return for a limited company in Germany?",
+      "answerable": false,
+      "confidence": 0.2687,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "gustaf-alstromer",
+        "dylan-field",
+        "richard-rumelt",
+        "kunal-shah"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "recipe",
+      "question": "What is the correct ratio of flour to water for a sourdough starter?",
+      "answerable": false,
+      "confidence": 0.2384,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "gustaf-alstromer",
+        "fei-fei",
+        "dr-fei-fei-li",
+        "jen-abel",
+        "manik-gupta"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "sports-result",
+      "question": "Who won the 2019 Rugby World Cup final and what was the score?",
+      "answerable": false,
+      "confidence": 0.191,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "tobi-lutke",
+        "kunal-shah",
+        "mihika-kapoor",
+        "fei-fei"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "rust-borrowck",
+      "question": "Why does the Rust borrow checker reject my self-referential struct?",
+      "answerable": false,
+      "confidence": 0.3547,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "bret-taylor",
+        "sander-schulhoff",
+        "kevin-weil",
+        "hamelshreya",
+        "hamel-husain-shreya-shankar"
+      ],
+      "expected": [],
+      "recall_hit": null
+    },
+    {
+      "id": "celebrity-personal",
+      "question": "What is Lenny Rachitsky's home address and personal phone number?",
+      "answerable": false,
+      "confidence": 0.471,
+      "method": "hybrid",
+      "returned": 6,
+      "episodes": [
+        "fei-fei",
+        "dr-fei-fei-li",
+        "kunal-shah",
+        "nick-turley",
+        "shreyas-doshi-live",
+        "tobi-lutke"
+      ],
+      "expected": [],
+      "recall_hit": null
+    }
+  ]
+}

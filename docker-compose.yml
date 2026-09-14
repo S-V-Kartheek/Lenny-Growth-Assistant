@@ -1,0 +1,82 @@
+# One-command startup:  docker compose up --build
+#
+# Services
+#   db      PostgreSQL 16 + pgvector. Named volume, so data survives restarts.
+#   ingest  One-shot job: downloads the pinned transcript corpus and indexes it.
+#           Runs to completion before the API is considered usable.
+#   api     FastAPI backend.
+#   web     React frontend (added in the frontend checkpoint).
+#
+# Ollama runs on the HOST, not in compose: it needs GPU access and a model cache
+# most evaluators already have, and containerising it would force a multi-GB
+# image pull. Containers reach it via host.docker.internal.
+
+name: lenny-growth-assistant
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lenny}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lenny}
+      POSTGRES_DB: ${POSTGRES_DB:-lenny}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lenny} -d ${POSTGRES_DB:-lenny}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  ingest:
+    build:
+      context: ./backend
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://lenny:lenny@db:5432/lenny}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      CORPUS_CACHE_DIR: /data/corpus
+    volumes:
+      - corpus:/data/corpus
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "-m", "app.ingestion.pipeline"]
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+    env_file: [.env]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://lenny:lenny@db:5432/lenny}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      CORPUS_CACHE_DIR: /data/corpus
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - corpus:/data/corpus
+    depends_on:
+      db:
+        condition: service_healthy
+      ingest:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  corpus:

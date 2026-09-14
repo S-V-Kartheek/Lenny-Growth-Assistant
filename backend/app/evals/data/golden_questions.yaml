@@ -1,0 +1,118 @@
+# Golden evaluation set.
+#
+# Purpose: make retrieval and refusal behaviour MEASURABLE rather than assessed
+# by eyeballing a few answers. Used by `python -m app.evals.retrieval_eval` and
+# by the routing tests.
+#
+# Two populations, and the gap between them is the whole point:
+#   in_corpus      -- answerable from the indexed episodes. `expect_any` lists
+#                     episode slugs where a correct answer plausibly lives; a
+#                     hit on ANY of them counts, because several guests discuss
+#                     the same topic and insisting on one "right" episode would
+#                     measure luck rather than retrieval.
+#   out_of_corpus  -- deliberately outside the corpus. The assistant must refuse
+#                     these. They are the defence against confident nonsense.
+#
+# `expect_any` is intentionally omitted where the topic is broad: those cases
+# still measure confidence separation even when they cannot measure recall.
+
+in_corpus:
+  - id: pmf-framework
+    question: How do I know if my product has found product-market fit?
+    expect_any: [todd-jackson, brian-chesky, dalton-caldwell]
+    intent: knowledge_qa
+
+  - id: growth-tactics-fail
+    question: Which growth tactics usually do not work?
+    expect_any: [elena-verna]
+    intent: knowledge_qa
+
+  - id: strategy-questions
+    question: What questions should a team answer to craft a winning strategy?
+    expect_any: [roger-martin, richard-rumelt]
+    intent: knowledge_qa
+
+  - id: prioritisation
+    question: How should product managers decide what to prioritise on the roadmap?
+    expect_any: [shreyas-doshi, shreyas-doshi-live, marty-cagan, ian-mcallister]
+    intent: knowledge_qa
+
+  - id: founder-led-sales
+    question: What is the right way to do founder-led sales in the early days?
+    expect_any: [jen-abel]
+    intent: knowledge_qa
+
+  - id: pm-theater
+    question: What is product management theater and why is it harmful?
+    expect_any: [marty-cagan, ray-cao]
+    intent: knowledge_qa
+
+  - id: netflix-culture
+    question: How does Netflix build a culture of excellence?
+    expect_any: [elizabeth-stone]
+    intent: knowledge_qa
+
+  - id: seo-ai-era
+    question: How should companies rethink SEO now that people ask AI assistants?
+    expect_any: [eli-schwartz, ethan-smith]
+    intent: knowledge_qa
+
+  - id: ai-evals
+    question: Why are evals important when building AI products?
+    expect_any: [hamel-husain-shreya-shankar, hamelshreya]
+    intent: knowledge_qa
+
+  - id: career-growth
+    question: How do I grow my influence and advance my career as a PM?
+    expect_any: [jeffrey-pfeffer, nikhyl-singhal, vikrama-dhiman]
+    intent: knowledge_qa
+
+  - id: early-startup-ideas
+    question: What are tar pit ideas and how do founders avoid them?
+    expect_any: [dalton-caldwell, gustaf-alstromer]
+    intent: knowledge_qa
+
+  - id: activation-retention
+    question: How should a team think about activation and retention?
+    intent: knowledge_qa
+
+# These must be refused. Each is plausible-sounding in register but has no
+# support in a product/growth podcast corpus -- which is exactly when a naive
+# RAG system invents an authoritative-sounding answer.
+out_of_corpus:
+  - id: quantum-db
+    question: What is the best database architecture for a quantum computing company?
+
+  - id: k8s-operator
+    question: Which Kubernetes operator should I use for quantum annealing hardware?
+
+  - id: medical-dosage
+    question: What is the recommended paediatric dosage of amoxicillin for otitis media?
+
+  - id: tax-law
+    question: How do I file a VAT return for a limited company in Germany?
+
+  - id: recipe
+    question: What is the correct ratio of flour to water for a sourdough starter?
+
+  - id: sports-result
+    question: Who won the 2019 Rugby World Cup final and what was the score?
+
+  - id: rust-borrowck
+    question: Why does the Rust borrow checker reject my self-referential struct?
+
+  - id: celebrity-personal
+    question: What is Lenny Rachitsky's home address and personal phone number?
+
+# Routing fixtures: the phrasing a user actually types, and the skill that must
+# handle it. Used by the agent-routing tests.
+routing:
+  - {id: r-qa-1, text: "How do I improve activation for a SaaS product?", intent: knowledge_qa}
+  - {id: r-qa-2, text: "What does the podcast say about pricing?", intent: knowledge_qa}
+  - {id: r-qa-3, text: "Can you explain more about that second point?", intent: knowledge_qa}
+  - {id: r-ship-1, text: "Turn that into a Ship 30 for 30 essay.", intent: ship30_essay}
+  - {id: r-ship-2, text: "Write a 1250 word essay about this.", intent: ship30_essay}
+  - {id: r-ship-3, text: "Make this into an article I can publish on LinkedIn.", intent: ship30_essay}
+  - {id: r-art-1, text: "Create an HTML landing page for this idea.", intent: artifact}
+  - {id: r-art-2, text: "Give me a product launch checklist as a markdown document.", intent: artifact}
+  - {id: r-art-3, text: "Build me a one-page dashboard mockup in HTML and CSS.", intent: artifact}
