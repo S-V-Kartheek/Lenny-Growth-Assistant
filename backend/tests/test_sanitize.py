@@ -22,6 +22,7 @@ from app.agent.sanitize import (
     build_artifact_document,
     extract_title,
     is_safe_url,
+    response_csp,
     sanitise_css,
     sanitise_css_declarations,
     sanitise_html,
@@ -411,6 +412,23 @@ def test_sandbox_contract_never_grants_same_origin_or_scripts() -> None:
     assert "allow-scripts" not in ARTIFACT_SANDBOX
     assert "allow-same-origin" not in ARTIFACT_CSP
     assert "allow-scripts" not in ARTIFACT_CSP
+
+
+def test_response_csp_allows_the_configured_frontend_origins_not_just_self() -> None:
+    """A hardcoded `frame-ancestors 'self'` blocks the frontend's own separate
+    origin from ever embedding the artifact -- caught live against the real
+    frontend (checkpoint 4), not by a unit test that only exercised the
+    document's static body."""
+    csp = response_csp(["http://localhost:5173", "http://localhost:3000"])
+    assert "frame-ancestors 'self' http://localhost:5173 http://localhost:3000;" in csp
+    # Everything else about the policy is untouched.
+    assert "default-src 'none'" in csp
+    assert "allow-same-origin" not in csp
+    assert "allow-scripts" not in csp
+
+
+def test_response_csp_with_no_frontend_origins_still_allows_self() -> None:
+    assert "frame-ancestors 'self';" in response_csp([])
 
 
 def test_model_cannot_author_the_document_head() -> None:

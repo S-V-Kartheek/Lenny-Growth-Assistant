@@ -32,8 +32,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import Response
 
-from app.agent.sanitize import ARTIFACT_CSP, ARTIFACT_SANDBOX
-from app.api.deps import UserIdDep
+from app.agent.sanitize import ARTIFACT_SANDBOX, response_csp
+from app.api.deps import SettingsDep, UserIdDep
 from app.errors import NotFoundError
 from app.schemas.artifact import ArtifactListResponse, ArtifactRecord
 from app.services import artifacts, sessions
@@ -74,7 +74,9 @@ async def get_artifact(artifact_id: str, user_id: UserIdDep) -> ArtifactRecord:
 
 
 @router.get("/artifacts/{artifact_id}/document", response_class=Response)
-async def get_artifact_document(artifact_id: str, user_id: UserIdDep) -> Response:
+async def get_artifact_document(
+    artifact_id: str, user_id: UserIdDep, settings: SettingsDep
+) -> Response:
     """Serve the sanitised HTML for embedding in a sandboxed iframe."""
     row = await artifacts.get_artifact(artifact_id)
     await sessions.get_session(row.session_id, user_id)
@@ -87,10 +89,11 @@ async def get_artifact_document(artifact_id: str, user_id: UserIdDep) -> Respons
         content=row.content,
         media_type="text/html; charset=utf-8",
         headers={
-            # The same policy the document carries in its own <meta>, sent as a
-            # header too: a header cannot be dislodged by anything in the body.
-            "Content-Security-Policy": ARTIFACT_CSP,
-            "X-Frame-Options": "SAMEORIGIN",
+            # frame-ancestors here, not X-Frame-Options, is what actually
+            # governs who may embed this document -- see response_csp's
+            # docstring for why it must list the frontend's own origin(s)
+            # rather than 'self'.
+            "Content-Security-Policy": response_csp(settings.cors_origins),
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",

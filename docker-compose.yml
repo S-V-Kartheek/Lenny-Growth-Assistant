@@ -5,7 +5,7 @@
 #   ingest  One-shot job: downloads the pinned transcript corpus and indexes it.
 #           Runs to completion before the API is considered usable.
 #   api     FastAPI backend.
-#   web     React frontend (added in the frontend checkpoint).
+#   web     React frontend, served as a static build behind `serve`.
 #
 # Ollama runs on the HOST, not in compose: it needs GPU access and a model cache
 # most evaluators already have, and containerising it would force a multi-GB
@@ -75,6 +75,18 @@ services:
       timeout: 5s
       retries: 6
       start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "${WEB_PORT:-4173}:4173"
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

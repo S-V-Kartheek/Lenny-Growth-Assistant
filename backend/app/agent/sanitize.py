@@ -176,6 +176,25 @@ ARTIFACT_CSP = (
 ARTIFACT_SANDBOX = "allow-popups allow-popups-to-escape-sandbox"
 
 
+def response_csp(frontend_origins: list[str]) -> str:
+    """The CSP actually sent on `GET /api/artifacts/{id}/document`'s response.
+
+    `ARTIFACT_CSP`'s `frame-ancestors 'self'` is a document-body default -- but
+    the browser directive that actually governs who may frame the document is
+    read from the HTTP response header, not from the document's own
+    `<meta http-equiv>` (the CSP spec disallows `frame-ancestors` and
+    `sandbox` in a meta-delivered policy; browsers silently ignore both there).
+    Checkpoint 4's frontend runs on its own origin (a separate Vite/Compose
+    service, not served by this API), so a hardcoded `'self'` here would block
+    every legitimate embed -- caught live, not by a unit test, when the
+    sandboxed iframe failed to load against the real frontend origin. The
+    allowed origins are the same `CORS_ORIGINS` list already used for the
+    API's CORS policy, not a second place to configure the frontend's address.
+    """
+    ancestors = " ".join(("'self'", *frontend_origins))
+    return ARTIFACT_CSP.replace("frame-ancestors 'self';", f"frame-ancestors {ancestors};")
+
+
 # --------------------------------------------------------------- the report --
 
 

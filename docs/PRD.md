@@ -2,7 +2,7 @@
 
 **Status:** living document, updated as checkpoints land
 **Owner:** Forward-Deployed Engineer (this engagement)
-**Last updated:** checkpoint 3
+**Last updated:** checkpoint 4
 
 ---
 
@@ -59,7 +59,7 @@ projected production numbers, which would be invented.
 | **M1** | **Grounded answer rate** — answers that cite at least one real transcript passage and make no uncited factual claim | ≥ 90% of in-corpus golden questions | `app.evals.grounding_eval`, live model | **100% (12/12)** on `qwen2.5:7b-instruct` |
 | **M2** | **Honest refusal rate** — out-of-corpus questions declined rather than answered | ≥ 90% | Golden set, out-of-corpus population | **100% (8/8)** at threshold 0.48 |
 | **M3** | **Retrieval recall@6** — an expected episode appears in the top 6 | ≥ 85% | `app.evals.retrieval_eval` | **100% (11/11)** |
-| **M4** | **Time to first useful answer**, cold start to cited answer | < 2 min | Manual test plan | Checkpoint 4 |
+| **M4** | **Time to first useful answer**, cold start to cited answer | < 2 min | Manual test plan | **Measured: 127-146 s.** Misses the target on this CPU-only Ollama setup — see `docs/manual-test-plan.md` §7 |
 | **M5** | **Setup reproducibility** — fresh clone to working system by documented steps only | 1 command + documented wait | Fresh-evaluator test | Checkpoint 5 |
 
 **M1 and M2 are the primary metrics.** They encode the product's actual promise:
@@ -214,7 +214,7 @@ unknowns first, while there is still time to change approach.
 | 1 | **Knowledge spine** — schema, ingestion, hybrid retrieval, health, errors, logging, eval harness | Nothing downstream is trustworthy if retrieval is weak, and retrieval cannot be rescued later by better prompting | **Complete** |
 | 2 | **Provider abstraction, agent runtime, grounded chat** — LLM interface, routing, RAG skill, sessions, streaming | Where a small local model breaks. Retiring that risk early leaves room to adapt | **Complete** |
 | 3 | **Ship 30 and artifact skills** — structured essay generation, sanitiser, artifact persistence | Depends on a working grounded answer to build on | **Complete** |
-| 4 | **Frontend** — chat, sources, artifact viewer, states, accessibility | Built against a stable streaming API to avoid rework | |
+| 4 | **Frontend** — chat, sources, artifact viewer, states, accessibility | Built against a stable streaming API to avoid rework | **Complete** |
 | 5 | **Operations, documentation, final gate** — hardening, observability, docs, audit, fresh-evaluator test | Verification is worth most when there is a complete system to verify | |
 
 ### Checkpoint 1 outcome
@@ -331,3 +331,49 @@ Notable findings, in full in
   against the model-facing policy alone, flagged nh3's own output on every
   link. Fixed by separating "what a model may request" from "what nh3 injects
   regardless," with the verifier checking the union.
+
+### Checkpoint 4 outcome
+
+Delivered: a React/TypeScript/Vite frontend (the `web` Compose service) —
+streaming chat with phase feedback, source cards distinguishing cited from
+uncited/near-miss sources, a refusal state that is never rendered as a
+normal answer, a sandboxed-iframe artifact viewer reading the API's own
+`sandbox` string verbatim, a Markdown renderer with no `rehype-raw` code
+path, provider/session UI, and keyboard/screen-reader-tree accessibility;
+`docs/design.md` and `docs/manual-test-plan.md` (both anticipated since
+checkpoint 1 but written here, alongside the code they govern); 41 frontend
+tests; and a fix to a pre-existing infrastructure bug (the containerised
+`api` service was crash-looping on a Dockerfile that hardcoded its pip
+install list instead of installing from `pyproject.toml`).
+
+Notable findings, in full in
+[`agent-transcripts/checkpoint-4-frontend.md`](../agent-transcripts/checkpoint-4-frontend.md):
+
+- **Three distinct cross-origin bugs, all invisible to every prior test —
+  because there was only ever one origin before this checkpoint.** (1) The
+  SSE stream reader searched for a bare `\n\n` frame boundary, but
+  `sse_starlette` sends CRLF (`\r\n\r\n`); no event was parsed until the
+  connection closed, making a live 2-minute turn look permanently stuck on
+  "routing" even though the backend had finished in seconds. (2) The
+  artifact document endpoint sent `Content-Security-Policy: frame-ancestors
+  'self'`, which only permits framing from the API's own origin — but the
+  frontend is a deliberately separate origin (its own Compose service), so
+  every embed was silently blocked. Fixed by deriving `frame-ancestors` from
+  the existing `CORS_ORIGINS` setting instead of hardcoding `'self'`. (3)
+  `CORS_ORIGINS`'s default didn't include `:4173`, the port the actual `web`
+  container publishes (only `:5173`, the dev server, had been tested) — the
+  containerised build couldn't reach the API at all until this was added.
+  All three were found by driving the real, running app — dev server *and*
+  the actual Docker container — with Playwright against the real backend,
+  not by any unit or component test.
+- **M4 measured 127-146 seconds, missing the < 2 minute target.** Measured
+  directly (the backend's own `latency_ms`, not a Playwright-side
+  stopwatch) across a cold run (146.2 s, first request after container
+  start) and a warm run (127.4 s, model already resident) — consistent, not
+  a one-off. Reported as a real finding rather than adjusted away: this
+  environment runs `qwen2.5:7b-instruct` on CPU-only Ollama, and the target
+  was set before that full pipeline's throughput was measured end-to-end.
+  The frontend surfaces the wait accurately throughout (phase progress,
+  sources visible within ~2 seconds of retrieval finishing) rather than
+  hiding it — the miss is a hardware/model-throughput fact, not a frontend
+  defect.

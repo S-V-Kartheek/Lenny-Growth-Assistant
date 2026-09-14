@@ -48,8 +48,19 @@ class Settings(BaseSettings):
     # NoDecode: without it pydantic-settings JSON-decodes list fields straight
     # from .env and a plain comma-separated value raises before any validator
     # runs. NoDecode hands the raw string to _split_csv instead.
+    # :5173 is the Vite dev server; :4173 is the built `web` Compose service
+    # (frontend/Dockerfile's `serve` stage); :3000 covers a common alternate
+    # dev port. Missing one of these here is not just a CORS nuisance -- the
+    # artifact document endpoint's frame-ancestors is also derived from this
+    # list (app.agent.sanitize.response_csp), so an origin left out here
+    # cannot embed a sandboxed artifact either. Found live, against the
+    # actual containerised `web` service, in checkpoint 4.
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://localhost:3000"]
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://localhost:4173",
+            "http://localhost:3000",
+        ]
     )
 
     # --------------------------------------------------------------- data ---

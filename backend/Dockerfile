@@ -9,20 +9,16 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Dependencies first so application edits do not invalidate the install layer.
+# Install from pyproject.toml's dependency list directly, not a hand-copied
+# duplicate of it — a prior version hardcoded the pip install list here and it
+# silently drifted out of sync when nh3 was added to pyproject.toml (checkpoint
+# 3), crash-looping the container with ModuleNotFoundError. `pip install .`
+# reads the same dependencies array pytest/uv install from, so it cannot drift
+# again. app/ is copied first so `pip install .` (which needs the package
+# present for hatchling to build it) doesn't require a second install layer.
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir \
-      "fastapi>=0.115" \
-      "uvicorn[standard]>=0.32" \
-      "pydantic>=2.9" \
-      "pydantic-settings>=2.6" \
-      "sqlalchemy[asyncio]>=2.0.36" \
-      "asyncpg>=0.30" \
-      "httpx>=0.27" \
-      "pyyaml>=6.0" \
-      "sse-starlette>=2.1"
-
 COPY app ./app
+RUN pip install --no-cache-dir .
 
 # Runs unprivileged: nothing in this container needs root at runtime.
 RUN useradd --create-home --uid 10001 appuser \

@@ -224,8 +224,19 @@ async def test_document_is_served_with_isolating_headers(
     assert "default-src 'none'" in csp
     assert "script-src" not in csp  # nothing grants script; default-src denies it
     assert "allow-same-origin" not in csp
+    # frame-ancestors lists 'self' plus the configured frontend origin(s)
+    # (CORS_ORIGINS) -- not just 'self', which would block the frontend's own
+    # separate origin from ever embedding the sandboxed iframe (found live,
+    # not by a unit test: see checkpoint 4's transcript). No X-Frame-Options
+    # header is sent -- it cannot express "allow this other origin" the way
+    # CSP's frame-ancestors can, and every evergreen browser honours
+    # frame-ancestors over it when both are present.
+    assert (
+        "frame-ancestors 'self' http://localhost:5173 http://localhost:4173"
+        " http://localhost:3000;" in csp
+    )
+    assert "x-frame-options" not in response.headers
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["x-frame-options"] == "SAMEORIGIN"
     assert response.headers["referrer-policy"] == "no-referrer"
 
 

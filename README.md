@@ -9,11 +9,13 @@ It runs entirely on your machine: **Ollama** for the model, **PostgreSQL +
 pgvector** for the index, **FastAPI** for the API. Cloud providers (Anthropic,
 OpenAI) are a configuration change, not a code change.
 
-> **Status:** Checkpoint 3 of 5 complete — knowledge spine, provider-agnostic
-> LLM layer, grounded Q&A, and now a structured Ship 30 essay skill, Markdown
-> and sanitised-HTML artifact generation, and an isolated artifact viewer
-> endpoint. The frontend lands in checkpoint 4. This README documents only
-> what is actually implemented and verified today.
+> **Status:** Checkpoint 4 of 5 complete — knowledge spine, provider-agnostic
+> LLM layer, grounded Q&A, the Ship 30 essay skill, Markdown/sanitised-HTML
+> artifact generation, and now a React frontend: streaming chat with phase
+> feedback, cited/refused answer states, a sandboxed artifact viewer, and
+> accessibility support. Final hardening and documentation land in
+> checkpoint 5. This README documents only what is actually implemented and
+> verified today.
 
 ---
 
@@ -43,7 +45,7 @@ golden set, not guessed — see [Evaluating retrieval](#evaluating-retrieval).
 
 ```
                  ┌──────────────────────────────┐
-                 │  Frontend (checkpoint 4)     │
+                 │  Frontend (React + Vite)     │
                  └───────────────┬──────────────┘
                                  │ HTTP / SSE
                  ┌───────────────▼──────────────┐
@@ -101,7 +103,14 @@ backend/
     services/           Session/message + artifact persistence, orchestration
     evals/              Golden set + retrieval + grounding + essay evaluation
   tests/                Pure tests (always run) + db-marked + llm-marked tests
-docker-compose.yml      db · ingest · api
+frontend/
+  src/
+    api/               REST client, typed wire contracts, the SSE frame reader
+    components/        Chat, source cards, refusal/error banners, artifact viewer
+    hooks/             Session/provider/artifact data, the chat-stream state machine
+    lib/               Pure logic: citation linking, refusal detection, the stream reducer
+  Dockerfile           Build the static bundle, serve it with `serve`
+docker-compose.yml      db · ingest · api · web
 .env.example            Every setting, documented, safe defaults
 ```
 
@@ -140,8 +149,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-That starts PostgreSQL, runs ingestion, and starts the API on
-<http://localhost:8000> (interactive docs at `/docs`).
+That starts PostgreSQL, runs ingestion, starts the API on
+<http://localhost:8000> (interactive docs at `/docs`), and starts the
+frontend on <http://localhost:4173>.
 
 **First run takes roughly 10–15 minutes**, almost all of it embedding ~4,400
 transcript chunks locally. It is a one-off: the index persists in a Docker volume
@@ -404,6 +414,46 @@ first version wrongly rejected -- and the fix.
 
 ---
 
+## The frontend
+
+React + TypeScript + Vite, served as the `web` Compose service (a static
+build behind `serve`) or via `npm run dev` for local iteration. Chosen over
+Next.js because there is no server-rendering or routing need this app
+actually has -- every view depends on live session/chat state, and "which
+session is active" is component state, not a router.
+
+- **Streaming chat** reads `POST /api/sessions/{id}/messages`'s SSE response
+  directly with the fetch Streams API (`EventSource` cannot do `POST`),
+  surfacing every phase event (`routing → retrieving → generating →
+  validating → done`) so a 30+ second local-model wait reads as progress.
+- **Source cards** render as soon as retrieval finishes -- before the answer
+  text -- and visually distinguish cited from uncited/near-miss sources.
+- **Refusals** render in a distinct banner, never as a normal answer bubble.
+- **The artifact viewer** embeds HTML artifacts in a sandboxed `<iframe>`
+  using the exact `sandbox` string the API returns, and renders Markdown
+  artifacts client-side without `rehype-raw` -- so the renderer has no code
+  path that turns markdown text into live HTML at all, independent of the
+  server's own escaping.
+- **Accessibility**: keyboard-operable throughout, an `aria-live` phase
+  status region, and states for empty/loading/streaming/error.
+
+Full principles in [`docs/design.md`](docs/design.md), the executed test
+plan (including two real cross-origin bugs this checkpoint found and fixed
+-- an SSE parser byte-format bug and a CSP `frame-ancestors` gap) in
+[`docs/manual-test-plan.md`](docs/manual-test-plan.md), and the full account
+in
+[`agent-transcripts/checkpoint-4-frontend.md`](agent-transcripts/checkpoint-4-frontend.md).
+
+```bash
+cd frontend
+npm install
+npm run dev       # local dev server, http://localhost:5173
+npm test          # vitest + Testing Library, 41 tests
+npm run lint      # oxlint
+```
+
+---
+
 ## Tests
 
 ```bash
@@ -451,7 +501,8 @@ endpoint and session isolation against the real system, not a mock of it.
 | `database_unavailable` errors | Postgres not up | `docker compose ps db`; check `DATABASE_URL` |
 | Ingestion is very slow | Embedding on CPU | Lower `INGEST_MAX_EPISODES`, or raise `EMBEDDING_BATCH_SIZE` |
 | `llm: unavailable` in `/health/detail` | Model not pulled, or Ollama down | `ollama pull qwen2.5:7b-instruct`; `ollama serve` |
-| Chat answers are slow to start | Local 7B model, cold load | Expected -- watch the SSE `phase` events; the UI is designed around this (checkpoint 4) |
+| Chat answers are slow to start | Local 7B model, cold load | Expected -- watch the SSE `phase` events; the UI is designed around this. Measured ~2-2.5 min end-to-end on CPU-only Ollama -- see `docs/manual-test-plan.md`'s M4 result |
+| Frontend header says "API unreachable," or the artifact iframe stays blank | The frontend's origin isn't in `CORS_ORIGINS` | Add it (e.g. a custom port) to `CORS_ORIGINS` in `.env` -- it governs both CORS and the artifact document's `frame-ancestors` |
 | A cloud provider returns `provider_unavailable` | Missing or wrong API key | Check `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in `.env`; `/health/detail`'s `llm.reason` says which |
 
 Every log line is one JSON object with a `request_id` that is also returned in

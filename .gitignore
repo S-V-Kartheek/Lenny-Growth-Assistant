@@ -36,6 +36,9 @@ dist/
 .vite/
 *.local
 
+# Playwright MCP session artifacts (screenshots, snapshots)
+.playwright-mcp/
+
 # Editors / OS
 .DS_Store
 Thumbs.db
