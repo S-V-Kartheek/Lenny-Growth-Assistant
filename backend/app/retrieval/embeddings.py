@@ -116,6 +116,14 @@ class EmbeddingClient:
     # independent of EMBEDDING_BATCH_SIZE (which is sized for Ollama). Chunk
     # here so callers can keep using one config value for either backend.
     _GEMINI_MAX_BATCH = 100
+    # Free-tier embedding quota is measured per-minute and is tight enough
+    # that a full-corpus ingestion (dozens of back-to-back batches) can trip
+    # it even though no single batch is large -- found live (checkpoint 6)
+    # ingesting 4,448 chunks against a fresh index. Retried, not treated as
+    # EmbeddingUnavailable, because it is a rate limit, not an outage: the
+    # same request succeeds moments later.
+    _GEMINI_RATE_LIMIT_RETRIES = 4
+    _GEMINI_RATE_LIMIT_BACKOFF_SECONDS = 15.0
 
     async def _embed_gemini(
         self, texts: list[str], *, timeout: float, task_type: str
@@ -139,10 +147,8 @@ class EmbeddingClient:
                         }
                         for t in batch
                     ]
-                    response = await client.post(
-                        url,
-                        params={"key": self._gemini_api_key},
-                        json={"requests": requests},
+                    response = await self._post_with_rate_limit_retry(
+                        client, url, requests
                     )
                     response.raise_for_status()
                     embeddings = response.json().get("embeddings") or []
@@ -150,3 +156,22 @@ class EmbeddingClient:
         except httpx.HTTPError as exc:
             raise EmbeddingUnavailable(f"Embedding request to Gemini failed: {exc}") from exc
         return vectors
+
+    async def _post_with_rate_limit_retry(
+        self, client: httpx.AsyncClient, url: str, requests: list[dict]
+    ) -> httpx.Response:
+        import asyncio
+
+        for attempt in range(self._GEMINI_RATE_LIMIT_RETRIES + 1):
+            response = await client.post(
+                url, params={"key": self._gemini_api_key}, json={"requests": requests}
+            )
+            if response.status_code != 429 or attempt == self._GEMINI_RATE_LIMIT_RETRIES:
+                return response
+            wait = self._GEMINI_RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1)
+            log.warning(
+                "gemini_embedding_rate_limited",
+                extra={"attempt": attempt + 1, "wait_seconds": wait},
+            )
+            await asyncio.sleep(wait)
+        return response  # pragma: no cover - loop always returns above
