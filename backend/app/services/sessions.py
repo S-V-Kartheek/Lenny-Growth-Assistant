@@ -129,7 +129,7 @@ async def get_session(session_id: str, user_id: str) -> SessionRow:
             await conn.execute(
                 text(
                     "SELECT id, title, created_at, updated_at FROM sessions "
-                    "WHERE id = :sid AND user_id = :uid"
+                    "WHERE id = :sid AND user_id = :uid AND archived = FALSE"
                 ),
                 {"sid": session_id, "uid": user_id},
             )
@@ -140,6 +140,41 @@ async def get_session(session_id: str, user_id: str) -> SessionRow:
         id=str(row["id"]), title=row["title"], created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+async def update_session_title(session_id: str, user_id: str, title: str) -> SessionRow:
+    await get_session(session_id, user_id)
+    async with connection() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "UPDATE sessions SET title = :title, updated_at = now() "
+                    "WHERE id = :sid AND user_id = :uid AND archived = FALSE "
+                    "RETURNING id, title, created_at, updated_at"
+                ),
+                {"sid": session_id, "uid": user_id, "title": title.strip()},
+            )
+        ).mappings().first()
+    if row is None:
+        raise NotFoundError(f"Session {session_id} was not found.")
+    return SessionRow(
+        id=str(row["id"]),
+        title=row["title"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+async def archive_session(session_id: str, user_id: str) -> None:
+    await get_session(session_id, user_id)
+    async with connection() as conn:
+        await conn.execute(
+            text(
+                "UPDATE sessions SET archived = TRUE, updated_at = now() "
+                "WHERE id = :sid AND user_id = :uid AND archived = FALSE"
+            ),
+            {"sid": session_id, "uid": user_id},
+        )
 
 
 async def get_history(session_id: str) -> list[MessageRow]:

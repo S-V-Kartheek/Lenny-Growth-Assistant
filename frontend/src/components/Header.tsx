@@ -1,4 +1,5 @@
 import type { ProviderStatus } from "../hooks/useProvider";
+import { Logo } from "./Logo";
 
 // Only these two are surfaced as a one-click toggle: Ollama is the fully
 // local demo path, Gemini the cloud path for a hosted deployment (Render/
@@ -15,20 +16,25 @@ export function Header({
   provider,
   switching,
   onSwitchProvider,
+  onBack,
 }: {
   provider: ProviderStatus;
   switching: boolean;
   onSwitchProvider: (provider: string) => void;
+  onBack?: () => void;
 }) {
   const activeProvider = provider.state === "ready" ? provider.info.provider : null;
 
   return (
     <header className="app-header">
       <div className="app-header__title">
-        <span className="app-header__title-icon" aria-hidden="true">
-          🎙️
-        </span>
-        Lenny Growth Assistant
+        {onBack ? (
+          <button type="button" className="app-header__home" onClick={onBack} aria-label="Back to home">
+            <Logo size="sm" />
+          </button>
+        ) : (
+          <Logo size="sm" />
+        )}
       </div>
       <div className="app-header__controls">
         <div

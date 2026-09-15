@@ -19,6 +19,10 @@ class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
 
 
+class UpdateSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
 class SessionSummary(BaseModel):
     id: str
     title: str

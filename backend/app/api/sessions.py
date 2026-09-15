@@ -27,6 +27,7 @@ from app.schemas.chat import (
     SessionListResponse,
     SessionSummary,
     SetProviderRequest,
+    UpdateSessionRequest,
 )
 from app.services import sessions
 from app.services.chat import stream_turn
