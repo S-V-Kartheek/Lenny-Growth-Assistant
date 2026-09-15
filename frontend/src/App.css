@@ -30,32 +30,10 @@
   --radius-pill: 999px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16171a;
-    --bg-sunken: #111214;
-    --bg-panel: #1e2023;
-    --border: #33353a;
-    --border-strong: #43454c;
-    --text: #ededea;
-    --text-muted: #a2a29b;
-    --accent: #6fbf9c;
-    --accent-hover: #85cbae;
-    --accent-fg: #0d1210;
-    --accent-soft: #253530;
-    --user-bubble: #253530;
-    --assistant-bubble: #1e2023;
-    --refusal-bg: #3a301a;
-    --refusal-border: #d9a441;
-    --error-bg: #3a2020;
-    --error-border: #e07070;
-    --cited-border: #6fbf9c;
-    --focus-ring: #7ab8ff;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
-  }
-}
+/* Light theme only, always -- forced regardless of system dark-mode
+   preference (previously followed prefers-color-scheme: dark; kept as a
+   single declaration block here rather than deleted so the token set is
+   still discoverable if a manual theme toggle is added back later). */
 
 * {
   box-sizing: border-box;
