@@ -41,6 +41,16 @@ class EmbeddingClient:
         self.dimensions = settings.embedding_dimensions
         self._base_url = settings.ollama_base_url.rstrip("/")
         self._gemini_api_key = settings.gemini_api_key
+        # Free-tier Gemini quota is EmbedContentRequestsPerMinutePerProjectPer
+        # Model = 100 (confirmed from the API's own 429 body), and each text
+        # in one batchEmbedContents call counts as one request against it --
+        # so a single full batch (_GEMINI_MAX_BATCH below) already spends the
+        # *entire* per-minute budget, and the very next batch fails
+        # immediately no matter how it's retried. Paced here instead of
+        # reactively retried: one instance is reused for a whole ingestion
+        # run, so tracking the last call time here (rather than per-request)
+        # correctly paces every batch that instance sends, from any caller.
+        self._last_gemini_call_monotonic: float | None = None
 
     @property
     def enabled(self) -> bool:
@@ -115,15 +125,17 @@ class EmbeddingClient:
     # Gemini's batchEmbedContents rejects more than 100 requests in one call,
     # independent of EMBEDDING_BATCH_SIZE (which is sized for Ollama). Chunk
     # here so callers can keep using one config value for either backend.
+    # 100 also happens to equal the free-tier per-minute quota itself (see
+    # __init__'s comment), so this is the largest batch that can ever
+    # succeed on that tier, not just an API ceiling.
     _GEMINI_MAX_BATCH = 100
-    # Free-tier embedding quota is measured per-minute and is tight enough
-    # that a full-corpus ingestion (dozens of back-to-back batches) can trip
-    # it even though no single batch is large -- found live (checkpoint 6)
-    # ingesting 4,448 chunks against a fresh index. Retried, not treated as
-    # EmbeddingUnavailable, because it is a rate limit, not an outage: the
-    # same request succeeds moments later.
-    _GEMINI_RATE_LIMIT_RETRIES = 4
-    _GEMINI_RATE_LIMIT_BACKOFF_SECONDS = 15.0
+    # Spacing between successive batches so a full-size batch (which alone
+    # can spend the entire per-minute quota) never overlaps the next one.
+    # Slightly over 60s for margin against clock/window-alignment slop --
+    # Google's own 429 body suggested a ~46-47s retry-after in practice, so
+    # this leaves real headroom rather than racing the reset exactly.
+    _GEMINI_MIN_SECONDS_BETWEEN_BATCHES = 61.0
+    _GEMINI_RATE_LIMIT_RETRIES = 3
 
     async def _embed_gemini(
         self, texts: list[str], *, timeout: float, task_type: str
@@ -147,9 +159,7 @@ class EmbeddingClient:
                         }
                         for t in batch
                     ]
-                    response = await self._post_with_rate_limit_retry(
-                        client, url, requests
-                    )
+                    response = await self._post_paced(client, url, requests)
                     response.raise_for_status()
                     embeddings = response.json().get("embeddings") or []
                     vectors.extend(e.get("values", []) for e in embeddings)
@@ -157,21 +167,29 @@ class EmbeddingClient:
             raise EmbeddingUnavailable(f"Embedding request to Gemini failed: {exc}") from exc
         return vectors
 
-    async def _post_with_rate_limit_retry(
+    async def _post_paced(
         self, client: httpx.AsyncClient, url: str, requests: list[dict]
     ) -> httpx.Response:
+        """Send one batch, spaced from the previous one, retrying a 429 as a
+        last resort (proactive pacing is the real fix; reactive retry only
+        covers a window-alignment edge the pacing itself can't guarantee)."""
         import asyncio
+        import time
 
         for attempt in range(self._GEMINI_RATE_LIMIT_RETRIES + 1):
+            if self._last_gemini_call_monotonic is not None:
+                elapsed = time.monotonic() - self._last_gemini_call_monotonic
+                remaining = self._GEMINI_MIN_SECONDS_BETWEEN_BATCHES - elapsed
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+            self._last_gemini_call_monotonic = time.monotonic()
             response = await client.post(
                 url, params={"key": self._gemini_api_key}, json={"requests": requests}
             )
             if response.status_code != 429 or attempt == self._GEMINI_RATE_LIMIT_RETRIES:
                 return response
-            wait = self._GEMINI_RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1)
             log.warning(
                 "gemini_embedding_rate_limited",
-                extra={"attempt": attempt + 1, "wait_seconds": wait},
+                extra={"attempt": attempt + 1},
             )
-            await asyncio.sleep(wait)
         return response  # pragma: no cover - loop always returns above
