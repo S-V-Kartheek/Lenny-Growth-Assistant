@@ -101,14 +101,17 @@ services:
         value: gpt-4o-mini
 
       # --- Embeddings: no local Ollama on Render, so semantic search uses
-      # Gemini's hosted embedding model instead. text-embedding-004 outputs a
-      # fixed 768 dimensions, matching the vector(768) column, so this needs
-      # no schema change -- and it reuses the same GEMINI_API_KEY as the LLM
-      # above, so no extra secret to configure. ---
+      # Gemini's hosted embedding model instead. gemini-embedding-001 with
+      # outputDimensionality=768 (set in app/retrieval/embeddings.py) matches
+      # the vector(768) column, so this needs no schema change -- and it
+      # reuses the same GEMINI_API_KEY as the LLM above, so no extra secret
+      # to configure. text-embedding-004 (the model used here originally) was
+      # deprecated and returns a 404 as of this checkpoint -- confirmed via
+      # the API's own /v1beta/models listing, which no longer includes it. ---
       - key: EMBEDDING_PROVIDER
         value: gemini
       - key: EMBEDDING_MODEL
-        value: text-embedding-004
+        value: gemini-embedding-001
 
       - key: RETRIEVAL_TOP_K
         value: "6"

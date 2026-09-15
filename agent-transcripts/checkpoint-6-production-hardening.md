@@ -202,6 +202,44 @@ new required field threaded through every test fixture that constructs a
 
 ---
 
+## Finding 5: the Gemini embedding model was already deprecated
+
+A later pass in this same checkpoint migrated the production database from
+Render's managed Postgres to Supabase (a separate ask, tracked in the same
+session). That migration re-ran the ingestion pipeline against a fresh,
+empty database for the first time this embedding path had ever executed a
+real, non-degraded run in production -- and it failed silently in exactly
+the way `/health/detail` is supposed to make visible: `embeddings.status`
+reported `"ok"` while `chunks_embedded` was `0` out of `4448`.
+
+**Cause.** `EMBEDDING_MODEL=text-embedding-004` (set in Finding 1, above)
+now 404s: `GET /v1beta/models` against the live API no longer lists it at
+all -- Google deprecated and removed it, replaced by `gemini-embedding-001`
+(and newer `gemini-embedding-2*` variants). The ingestion pipeline logged
+`embedding_batch_failed` for every batch and correctly continued rather than
+crashing (chunks still got created and indexed lexically), but
+`embeddings.status: "ok"` in `/health/detail` reflects only "the provider is
+configured and reachable," not "the last ingestion run actually embedded
+anything" -- a real gap in what that status field means, worth revisiting if
+this recurs.
+
+**Fix.** Verified `gemini-embedding-001` directly against the live API
+before changing anything: `batchEmbedContents` with `outputDimensionality:
+768` for both `RETRIEVAL_DOCUMENT` and `RETRIEVAL_QUERY` task types returns
+exactly 768-dimension vectors, matching the existing `vector(768)` column
+with no schema change. `EMBEDDING_MODEL` in `render.yaml` updated
+accordingly; no application code change was needed since the model name was
+already externalized as config, not hardcoded.
+
+**A process note, not just a technical one.** This was caught only because
+the Supabase migration forced a real, non-degraded ingestion run and someone
+looked at `/health/detail`'s actual numbers instead of trusting its
+top-level `"ok"`. The same silent failure would very likely have persisted
+indefinitely on the *previous* database too, invisibly, since nothing had
+forced a fresh full re-embed there since this model was set.
+
+---
+
 ## What this checkpoint did not touch, and why
 
 **Figma was considered and explicitly rejected for this pass.** The existing

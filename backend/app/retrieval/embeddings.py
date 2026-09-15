@@ -10,7 +10,7 @@ Two backends are supported:
 
 * **ollama** -- local, used in dev/Docker Compose where a model can be pulled.
 * **gemini** -- hosted, used on Render where there is no GPU/persistent disk
-  for Ollama. Uses `models/text-embedding-004`, which is a fixed 768
+  for Ollama. Uses `models/gemini-embedding-001` at `outputDimensionality=768`
   dimensions -- matching the `vector(768)` column so no schema migration is
   needed when switching between the two providers.
 """

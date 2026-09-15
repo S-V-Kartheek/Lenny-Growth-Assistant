@@ -525,7 +525,7 @@ instead -- the same `LLMProvider` abstraction used locally, just pointed at
 two cloud backends via env vars, so a Gemini timeout or outage fails over to
 Grok instead of degrading straight to a refusal. `EMBEDDING_PROVIDER=gemini`
 similarly replaces Ollama for the embedding step: Gemini's
-`text-embedding-004` outputs a fixed 768 dimensions, matching the
+`gemini-embedding-001` is requested at `outputDimensionality=768`, matching the
 `vector(768)` column, so hosted retrieval stays hybrid semantic+lexical
 rather than falling back to lexical-only. `/health/detail` reports the
 active provider and any degradation honestly either way, matching the same
