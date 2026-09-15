@@ -12,6 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.config import Provider
+
 
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
@@ -58,3 +60,7 @@ class ProviderInfo(BaseModel):
     model: str
     context_tokens: int
     fallback_provider: str | None = None
+
+
+class SetProviderRequest(BaseModel):
+    provider: Provider

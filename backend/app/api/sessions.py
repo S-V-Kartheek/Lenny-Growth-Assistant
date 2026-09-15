@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import AgentDep, SettingsDep, UserIdDep
+from app.llm.registry import build_provider
 from app.schemas.chat import (
     CreateSessionRequest,
     MessageRecord,
@@ -25,6 +26,7 @@ from app.schemas.chat import (
     SessionHistoryResponse,
     SessionListResponse,
     SessionSummary,
+    SetProviderRequest,
 )
 from app.services import sessions
 from app.services.chat import stream_turn
@@ -142,6 +144,31 @@ async def provider_info(settings: SettingsDep, agent: AgentDep) -> ProviderInfo:
     PRD 2.5: the UI header must reflect the active provider without a code
     change when it is switched. This is what it reads.
     """
+    described = agent.gateway.describe
+    return ProviderInfo(
+        provider=described["provider"],
+        model=described["model"],
+        context_tokens=described["context_tokens"],
+        fallback_provider=described["fallback_provider"],
+    )
+
+
+@provider_router.post("/provider", response_model=ProviderInfo)
+async def switch_provider(
+    body: SetProviderRequest, settings: SettingsDep, agent: AgentDep
+) -> ProviderInfo:
+    """Switch the active model for every subsequent request on this deployment.
+
+    A process-wide switch, not per-session: the assignment's model toggle is a
+    single header control (PRD 2.5), not a per-conversation setting, so there
+    is one gateway to redirect rather than one per session. Swapping isn't
+    gated on health() -- an unconfigured provider (e.g. no GEMINI_API_KEY yet)
+    is allowed to become primary, and the next message fails loudly with
+    `provider_unavailable` and its remediation, the same way an unconfigured
+    provider already behaves via LLM_PROVIDER at startup. Silently refusing
+    the switch would hide that the key still needs to be set.
+    """
+    agent.gateway.primary = build_provider(settings, body.provider)
     described = agent.gateway.describe
     return ProviderInfo(
         provider=described["provider"],

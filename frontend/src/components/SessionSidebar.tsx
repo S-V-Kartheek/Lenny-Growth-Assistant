@@ -11,8 +11,9 @@ export function SessionSidebar({ sessions, activeId, onSelect, onCreate }: Props
   return (
     <nav className="sidebar" aria-label="Sessions">
       <button type="button" className="sidebar__new" onClick={onCreate}>
-        + New session
+        <span aria-hidden="true">＋</span> New session
       </button>
+      {sessions.length > 0 && <div className="sidebar__section-label">Recent</div>}
       <ul className="sidebar__list">
         {sessions.map((s) => (
           <li key={s.id}>

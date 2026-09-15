@@ -18,12 +18,17 @@ export function StreamingTurn({ stream, onRetry }: { stream: StreamState; onRetr
       <SourceCards sources={stream.sources} heading="Sources found" />
       {stream.text && (
         <div className="message message--assistant">
-          <div className="message__role">Assistant</div>
-          <div className="message__content">
-            <p>
-              {stream.text}
-              {stream.active && <span className="typing-caret" aria-hidden="true" />}
-            </p>
+          <div className="message__avatar" aria-hidden="true">
+            🎙️
+          </div>
+          <div className="message__body">
+            <div className="message__role">Assistant</div>
+            <div className="message__content">
+              <p>
+                {stream.text}
+                {stream.active && <span className="typing-caret" aria-hidden="true" />}
+              </p>
+            </div>
           </div>
         </div>
       )}

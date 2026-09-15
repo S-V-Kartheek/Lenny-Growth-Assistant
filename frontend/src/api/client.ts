@@ -58,6 +58,14 @@ export function getProvider(): Promise<ProviderInfo> {
   return request<ProviderInfo>("/api/provider");
 }
 
+/** Switches the active model for every subsequent request (PRD 2.5's toggle). */
+export function setProvider(provider: string): Promise<ProviderInfo> {
+  return request<ProviderInfo>("/api/provider", {
+    method: "POST",
+    body: JSON.stringify({ provider }),
+  });
+}
+
 export function listSessions(): Promise<SessionListResponse> {
   return request<SessionListResponse>("/api/sessions");
 }

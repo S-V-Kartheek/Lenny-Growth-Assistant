@@ -56,14 +56,23 @@ services:
         value: https://REPLACE-WITH-YOUR-VERCEL-DOMAIN.vercel.app
 
       # --- Cloud LLM provider (Ollama is local-only, see header note) ---
+      # The header's toggle only offers ollama/gemini (see frontend
+      # Header.tsx) -- ollama will correctly show provider_unavailable here
+      # since there's no host for it to reach on Render, which is expected:
+      # the toggle is a local-vs-cloud demo of the same LLMProvider
+      # abstraction, not a promise every option works on every deployment.
       - key: LLM_PROVIDER
-        value: anthropic
+        value: gemini
       - key: LLM_TEMPERATURE
         value: "0.3"
       - key: LLM_TIMEOUT_SECONDS
         value: "60"
       - key: LLM_MAX_OUTPUT_TOKENS
         value: "2048"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: ANTHROPIC_MODEL

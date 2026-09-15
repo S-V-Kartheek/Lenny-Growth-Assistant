@@ -26,6 +26,7 @@ class Provider(StrEnum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    GEMINI = "gemini"
 
 
 class Settings(BaseSettings):
@@ -90,6 +91,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_context_tokens: int = 128000
+
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_context_tokens: int = 1000000
 
     # If the selected provider is unreachable, fall back to this one when it is
     # configured. Empty string disables fallback (fail loudly instead).
@@ -172,7 +177,10 @@ class Settings(BaseSettings):
             return [item.strip() for item in stripped.split(",") if item.strip()]
         return v
 
-    @field_validator("llm_fallback_provider", "anthropic_api_key", "openai_api_key", mode="before")
+    @field_validator(
+        "llm_fallback_provider", "anthropic_api_key", "openai_api_key", "gemini_api_key",
+        mode="before",
+    )
     @classmethod
     def _empty_to_none(cls, v: object) -> object:
         if isinstance(v, str) and not v.strip():
@@ -201,6 +209,7 @@ class Settings(BaseSettings):
             Provider.OLLAMA: self.ollama_model,
             Provider.ANTHROPIC: self.anthropic_model,
             Provider.OPENAI: self.openai_model,
+            Provider.GEMINI: self.gemini_model,
         }[provider]
 
     def context_tokens_for(self, provider: Provider) -> int:
@@ -208,6 +217,7 @@ class Settings(BaseSettings):
             Provider.OLLAMA: self.ollama_context_tokens,
             Provider.ANTHROPIC: self.anthropic_context_tokens,
             Provider.OPENAI: self.openai_context_tokens,
+            Provider.GEMINI: self.gemini_context_tokens,
         }[provider]
 
     def api_key_for(self, provider: Provider) -> str | None:
@@ -215,6 +225,7 @@ class Settings(BaseSettings):
             Provider.OLLAMA: None,
             Provider.ANTHROPIC: self.anthropic_api_key,
             Provider.OPENAI: self.openai_api_key,
+            Provider.GEMINI: self.gemini_api_key,
         }[provider]
 
 

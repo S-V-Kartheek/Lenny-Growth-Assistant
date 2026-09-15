@@ -58,6 +58,20 @@ async def test_provider_info_reflects_the_configured_backend(client: AsyncClient
     assert body["model"]
 
 
+async def test_switch_provider_updates_the_active_backend(client: AsyncClient) -> None:
+    switched = await client.post("/api/provider", json={"provider": "gemini"})
+    assert switched.status_code == 200
+    assert switched.json()["provider"] == "gemini"
+
+    confirmed = await client.get("/api/provider")
+    assert confirmed.json()["provider"] == "gemini"
+
+    # Leave the gateway back on ollama so this test doesn't leak state into
+    # later tests in this module that expect the configured default.
+    back = await client.post("/api/provider", json={"provider": "ollama"})
+    assert back.json()["provider"] == "ollama"
+
+
 async def test_create_session_and_post_a_message_streams_a_grounded_answer(
     client: AsyncClient,
 ) -> None:

@@ -20,7 +20,14 @@ export function MessageList({
   if (messages.length === 0) {
     return (
       <div className="empty-state">
-        <p>Ask a real product or growth question and get an answer grounded in what operators actually said, with citations.</p>
+        <div className="empty-state__icon" aria-hidden="true">
+          🌱
+        </div>
+        <h2 className="empty-state__heading">What are you working on?</h2>
+        <p className="empty-state__body">
+          Ask a real product or growth question and get an answer grounded in what operators
+          actually said, with citations.
+        </p>
         <ul className="empty-state__examples">
           {EXAMPLES.map((ex) => (
             <li key={ex}>

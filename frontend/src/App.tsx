@@ -13,7 +13,7 @@ import { useArtifact } from "./hooks/useArtifact";
 import { getSessionHistory, listSessionArtifacts } from "./api/client";
 
 function App() {
-  const provider = useProvider();
+  const { status: providerStatus, switching: providerSwitching, switchProvider } = useProvider();
   const { sessions, activeId, setActiveId, newSession } = useSessions();
   const { messages, setHistory, stream, send, resetStream } = useChatStream(activeId);
   const [artifactId, setArtifactId] = useState<string | null>(null);
@@ -60,7 +60,11 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Header provider={provider} />
+      <Header
+        provider={providerStatus}
+        switching={providerSwitching}
+        onSwitchProvider={switchProvider}
+      />
       <div className="app-body">
         <SessionSidebar
           sessions={sessions}

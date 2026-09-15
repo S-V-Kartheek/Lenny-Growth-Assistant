@@ -34,26 +34,31 @@ export function MessageBubble({ message }: { message: MessageRecord }) {
       className={"message" + (isUser ? " message--user" : " message--assistant")}
       role="article"
     >
-      <div className="message__role">{isUser ? "You" : "Assistant"}</div>
-      <div className="message__content">
-        {isUser ? (
-          <p>{message.content}</p>
-        ) : (
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: CitationAwareLink }}>
-            {linkifyCitations(message.content)}
-          </ReactMarkdown>
+      <div className="message__avatar" aria-hidden="true">
+        {isUser ? "🧑" : "🎙️"}
+      </div>
+      <div className="message__body">
+        <div className="message__role">{isUser ? "You" : "Assistant"}</div>
+        <div className="message__content">
+          {isUser ? (
+            <p>{message.content}</p>
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: CitationAwareLink }}>
+              {linkifyCitations(message.content)}
+            </ReactMarkdown>
+          )}
+        </div>
+        {!isUser && (message.provider || message.latency_ms != null) && (
+          <div className="message__footer">
+            {message.provider && (
+              <span>
+                {message.provider} · {message.model}
+              </span>
+            )}
+            {message.latency_ms != null && <span>{Math.round(message.latency_ms)} ms</span>}
+          </div>
         )}
       </div>
-      {!isUser && (message.provider || message.latency_ms != null) && (
-        <div className="message__footer">
-          {message.provider && (
-            <span>
-              {message.provider} · {message.model}
-            </span>
-          )}
-          {message.latency_ms != null && <span>{Math.round(message.latency_ms)} ms</span>}
-        </div>
-      )}
     </div>
   );
 }
