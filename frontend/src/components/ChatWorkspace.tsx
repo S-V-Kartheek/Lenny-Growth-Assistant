@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Header } from "./Header";
 import { SessionSidebar } from "./SessionSidebar";
 import { MessageList } from "./MessageList";
@@ -19,10 +19,23 @@ export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
   const { artifact, loading: artifactLoading } = useArtifact(artifactId);
   const focusedSessions = useRef<Set<string>>(new Set());
   const lastMessageRef = useRef<string>("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Tracks whether the viewport was already at the bottom before this render's
+  // content changed, so a live answer streaming in keeps the view pinned to
+  // it, but a user who has scrolled up to re-read an earlier source card
+  // isn't yanked back down mid-read.
+  const stickToBottomRef = useRef(true);
 
   const sendMessage = (content: string) => {
     lastMessageRef.current = content;
+    stickToBottomRef.current = true;
     send(content);
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
   useEffect(() => {
@@ -30,7 +43,11 @@ export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
     let cancelled = false;
     resetStream();
     getSessionHistory(activeId).then((res) => {
-      if (!cancelled) setHistory(res.messages);
+      if (!cancelled) {
+        setHistory(res.messages);
+        // Opening a session should land on its most recent turn, not the top.
+        stickToBottomRef.current = true;
+      }
     });
     listSessionArtifacts(activeId).then((res) => {
       if (cancelled) return;
@@ -42,6 +59,13 @@ export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
+
+  // Runs after the DOM reflects new messages/streamed text, so the height
+  // used to compute "already scrolled to bottom" is the post-update height.
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return;
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, stream.text, stream.sources, stream.phase]);
 
   useEffect(() => {
     if (stream.artifactSaved) {
@@ -73,7 +97,7 @@ export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
           }}
         />
         <main className="chat-panel">
-          <div className="chat-panel__scroll">
+          <div className="chat-panel__scroll" ref={scrollRef} onScroll={handleScroll}>
             <MessageList messages={messages} onExampleClick={sendMessage} />
             <StreamingTurn
               stream={stream}
