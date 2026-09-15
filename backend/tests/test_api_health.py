@@ -17,18 +17,52 @@ from app.main import create_app
 # Points at a port with nothing listening, so every database call fails.
 UNREACHABLE_DB = "postgresql+asyncpg://nobody:nobody@127.0.0.1:1/none"
 
+# A hostname that cannot resolve at all -- the DNS-failure path, not the
+# connection-refused path. Deliberately different from UNREACHABLE_DB: a
+# refused TCP connection and a failed DNS lookup raise different exception
+# types (asyncpg/SQLAlchemy wrap the former as OperationalError; the latter
+# surfaces as a raw socket.gaierror from the pool's connect step, which
+# app.db.engine.connection() did NOT catch until checkpoint 5 -- found live
+# by stopping the actual `db` Compose container, which is exactly this case:
+# Docker's embedded DNS stops resolving a stopped service's name instantly.
+UNRESOLVABLE_DB = "postgresql+asyncpg://nobody:nobody@this-host-does-not-exist.invalid:5432/none"
 
-@pytest.fixture
-async def client_without_database() -> AsyncClient:
-    settings = Settings(
-        _env_file=None, database_url=UNREACHABLE_DB, embedding_provider="none"
-    )
+
+async def _client_for(database_url: str) -> AsyncClient:
+    settings = Settings(_env_file=None, database_url=database_url, embedding_provider="none")
     init_engine(settings)
     app = create_app(settings)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client
+    return AsyncClient(transport=transport, base_url="http://test")
+
+
+@pytest.fixture
+async def client_without_database() -> AsyncClient:
+    client = await _client_for(UNREACHABLE_DB)
+    yield client
+    await client.aclose()
     await dispose_engine()
+
+
+@pytest.fixture
+async def client_with_unresolvable_database() -> AsyncClient:
+    client = await _client_for(UNRESOLVABLE_DB)
+    yield client
+    await client.aclose()
+    await dispose_engine()
+
+
+async def test_a_chat_request_is_database_unavailable_not_a_raw_500_on_dns_failure(
+    client_with_unresolvable_database: AsyncClient,
+) -> None:
+    # This is the checkpoint-5 regression: POST /api/sessions used to hit the
+    # dependency (get_current_user_id -> get_or_create_anonymous_user) that
+    # opens a connection outside of a try/except a caller could shape, so an
+    # unresolvable hostname escaped as an uncaught socket.gaierror -> a raw
+    # 500 "internal_error" instead of the documented 503 database_unavailable.
+    response = await client_with_unresolvable_database.post("/api/sessions", json={})
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "database_unavailable"
 
 
 async def test_liveness_succeeds_even_with_no_database(

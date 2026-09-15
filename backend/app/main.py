@@ -10,6 +10,8 @@ so the operator can see *what* is wrong instead of a crash-looping container.
 from __future__ import annotations
 
 import logging
+import time
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -29,6 +31,7 @@ from app.observability import configure_logging, new_request_id, request_id_var
 log = logging.getLogger("app")
 
 REQUEST_ID_HEADER = "X-Request-ID"
+RATE_LIMIT_WINDOW_SECONDS = 60.0
 
 
 @asynccontextmanager
@@ -79,15 +82,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # singleton, so the app can be constructed with any Settings instance.
     app.state.settings = settings
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Request-ID", "X-User-Id"],
-        expose_headers=[REQUEST_ID_HEADER],
-    )
-
     @app.middleware("http")
     async def request_context(request: Request, call_next):  # type: ignore[no-untyped-def]
         rid = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
@@ -102,6 +96,68 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
+
+    # Per-process, in-memory sliding-window limiter. `rate_limit_per_minute`
+    # was declared in Settings and had a stable error code (ErrorCode.
+    # RATE_LIMITED, RateLimited) since checkpoint 1, but nothing ever enforced
+    # it -- found live in checkpoint 5's hardening pass by hammering the API
+    # and observing every request succeed regardless of volume. In-memory
+    # rather than a shared store (Redis, etc.) because this is a single
+    # uvicorn process by design (assignment scope; see docs/architecture.md);
+    # a multi-process or multi-replica deployment would need a shared backend
+    # instead, which is called out there rather than implemented here.
+    request_log: dict[str, deque[float]] = defaultdict(deque)
+
+    @app.middleware("http")
+    async def rate_limit(request: Request, call_next):  # type: ignore[no-untyped-def]
+        limit = settings.rate_limit_per_minute
+        if limit <= 0 or request.url.path.startswith("/health"):
+            return await call_next(request)
+        # X-User-Id first, so one caller's volume can't exhaust another's
+        # budget on a shared client IP (NAT, corp proxy); falls back to the
+        # connecting address when the header is absent, same as get_current_user_id.
+        key = request.headers.get("X-User-Id") or (
+            request.client.host if request.client else "unknown"
+        )
+        now = time.monotonic()
+        bucket = request_log[key]
+        cutoff = now - RATE_LIMIT_WINDOW_SECONDS
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            rid = request_id_var.get() or new_request_id()
+            body = ErrorBody(
+                code=ErrorCode.RATE_LIMITED,
+                message=f"Rate limit of {limit} requests/minute exceeded.",
+                remediation="Slow down and retry in a few seconds.",
+                request_id=rid,
+            )
+            return JSONResponse(
+                status_code=429,
+                content=ErrorResponse(error=body).model_dump(),
+                headers={"Retry-After": "60", REQUEST_ID_HEADER: rid},
+            )
+        bucket.append(now)
+        return await call_next(request)
+
+    # Registered last, deliberately: Starlette's `add_middleware` inserts each
+    # new layer at the *front* of the stack, so whichever middleware is added
+    # last ends up outermost. CORS has to be outermost so that a browser still
+    # gets Access-Control-Allow-Origin on a response the *other* middleware
+    # short-circuited (429 from rate_limit, the error envelope from an
+    # exception handler) -- registering it first, like every earlier
+    # checkpoint did, silently strips CORS headers from exactly the responses
+    # a client most needs to read the body of. Found live in checkpoint 5 by
+    # curling past the rate limit from a browser-like Origin header and
+    # noticing the 429 body had no CORS headers.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Request-ID", "X-User-Id"],
+        expose_headers=[REQUEST_ID_HEADER],
+    )
 
     _register_error_handlers(app)
 

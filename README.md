@@ -9,13 +9,17 @@ It runs entirely on your machine: **Ollama** for the model, **PostgreSQL +
 pgvector** for the index, **FastAPI** for the API. Cloud providers (Anthropic,
 OpenAI) are a configuration change, not a code change.
 
-> **Status:** Checkpoint 4 of 5 complete — knowledge spine, provider-agnostic
+> **Status:** All 5 checkpoints complete — knowledge spine, provider-agnostic
 > LLM layer, grounded Q&A, the Ship 30 essay skill, Markdown/sanitised-HTML
-> artifact generation, and now a React frontend: streaming chat with phase
-> feedback, cited/refused answer states, a sandboxed artifact viewer, and
-> accessibility support. Final hardening and documentation land in
-> checkpoint 5. This README documents only what is actually implemented and
-> verified today.
+> artifact generation, a React frontend (streaming chat with phase feedback,
+> cited/refused answer states, a sandboxed artifact viewer, accessibility
+> support), and now operational hardening: a real fresh-clone reproducibility
+> run, live-verified degraded-dependency behaviour, an enforced rate limit,
+> [`docs/architecture.md`](docs/architecture.md), and a full live essay
+> generation driven end-to-end through the real UI. See
+> [`agent-transcripts/checkpoint-5-operations-and-docs.md`](agent-transcripts/checkpoint-5-operations-and-docs.md)
+> for what was found and fixed this pass, including the honest gaps. This
+> README documents only what is actually implemented and verified today.
 
 ---
 
@@ -153,10 +157,16 @@ That starts PostgreSQL, runs ingestion, starts the API on
 <http://localhost:8000> (interactive docs at `/docs`), and starts the
 frontend on <http://localhost:4173>.
 
-**First run takes roughly 10–15 minutes**, almost all of it embedding ~4,400
-transcript chunks locally. It is a one-off: the index persists in a Docker volume
-and re-running skips unchanged episodes. To trade coverage for speed, lower
-`INGEST_MAX_EPISODES` in `.env` before the first `up`.
+**First run takes roughly 10–15 minutes on an idle host**, almost all of it
+embedding ~4,400 transcript chunks locally. Measured end-to-end from a real
+fresh clone in checkpoint 5: **~24 minutes** — real, but not an isolated
+number, since other verification work was competing for the same CPU-only
+Ollama instance during that run (see
+`agent-transcripts/checkpoint-5-operations-and-docs.md`); expect something
+between these two depending on what else is using the host's CPU and
+Ollama during the first `up`. It is a one-off: the index persists in a
+Docker volume and re-running skips unchanged episodes. To trade coverage for
+speed, lower `INGEST_MAX_EPISODES` in `.env` before the first `up`.
 
 Verify it came up cleanly:
 
@@ -467,13 +477,14 @@ uv venv --python 3.11 .venv && uv pip install -e ".[dev]" --python .venv
 Tests come in three tiers. The **pure** tier (parsing, chunking, selection,
 fusion, confidence, configuration, provider fallback policy, routing,
 citation validation, the essay structure/outline contract, the artifact
-skill, and the adversarial sanitiser suite) needs nothing and must always
-pass -- 340 tests. The **`db`** tier needs PostgreSQL and the **`llm`** tier
-needs a live model provider (Ollama by default); both **skip with an
-explanatory message** when their dependency is absent, rather than failing
-and drowning out real regressions. Current counts: 373 pure + db tests, plus
-4 tests that exercise the full chat API against a real PostgreSQL and a real
-Ollama together (`db and llm`) -- 385 total.
+skill, the rate limiter, and the adversarial sanitiser suite) needs nothing
+and must always pass -- 348 tests. The **`db`** tier needs PostgreSQL and the
+**`llm`** tier needs a live model provider (Ollama by default); both **skip
+with an explanatory message** when their dependency is absent, rather than
+failing and drowning out real regressions. Current counts (checkpoint 5,
+re-run against current code): 348 pure + 33 db-only = 381 pure/db tests,
+plus 4 tests that exercise the full chat API against a real PostgreSQL and a
+real Ollama together (`db and llm`) -- **385 total**.
 
 To run the `db` tier locally:
 
@@ -501,9 +512,10 @@ endpoint and session isolation against the real system, not a mock of it.
 | `database_unavailable` errors | Postgres not up | `docker compose ps db`; check `DATABASE_URL` |
 | Ingestion is very slow | Embedding on CPU | Lower `INGEST_MAX_EPISODES`, or raise `EMBEDDING_BATCH_SIZE` |
 | `llm: unavailable` in `/health/detail` | Model not pulled, or Ollama down | `ollama pull qwen2.5:7b-instruct`; `ollama serve` |
-| Chat answers are slow to start | Local 7B model, cold load | Expected -- watch the SSE `phase` events; the UI is designed around this. Measured ~2-2.5 min end-to-end on CPU-only Ollama -- see `docs/manual-test-plan.md`'s M4 result |
+| Chat answers are slow to start | Local 7B model, cold load | Expected -- watch the SSE `phase` events; the UI is designed around this. Measured 127-146s end-to-end on CPU-only Ollama, consistently, across two checkpoints -- see `docs/PRD.md` §1.3 (M4, re-scoped to `<3 min` for this configuration) and `docs/manual-test-plan.md`'s M4 result. A GPU host or a cloud provider (`LLM_PROVIDER=anthropic`/`openai`) hits the original `<2 min` target |
 | Frontend header says "API unreachable," or the artifact iframe stays blank | The frontend's origin isn't in `CORS_ORIGINS` | Add it (e.g. a custom port) to `CORS_ORIGINS` in `.env` -- it governs both CORS and the artifact document's `frame-ancestors` |
 | A cloud provider returns `provider_unavailable` | Missing or wrong API key | Check `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` in `.env`; `/health/detail`'s `llm.reason` says which |
+| Requests return `rate_limited` (429) | More than `RATE_LIMIT_PER_MINUTE` requests/minute from one caller (`X-User-Id`, else IP) | Wait for the sliding window to clear (`Retry-After` header), or raise `RATE_LIMIT_PER_MINUTE` in `.env`. `/health*` is always exempt |
 
 Every log line is one JSON object with a `request_id` that is also returned in
 the `X-Request-ID` response header, so a user-visible failure can be traced to

@@ -65,7 +65,21 @@ async def connection() -> AsyncIterator[AsyncConnection]:
     try:
         async with get_engine().begin() as conn:
             yield conn
-    except (OperationalError, InterfaceError, DisconnectionError) as exc:
+    except (OperationalError, InterfaceError, DisconnectionError, OSError) as exc:
+        # OSError (its subclasses include socket.gaierror and
+        # ConnectionRefusedError) is caught alongside the SQLAlchemy
+        # connectivity exceptions deliberately: a DNS lookup failure --
+        # exactly what happens the instant a Compose service is stopped and
+        # Docker's embedded DNS stops resolving its name -- raises a raw
+        # socket.gaierror from the connection pool's connect step, before
+        # SQLAlchemy's own dialect-level error translation ever sees it, so
+        # it is never wrapped into OperationalError the way a TCP-level
+        # refused connection is. Missing this meant a live `db` outage
+        # produced a raw 500 instead of the documented database_unavailable
+        # (503) -- found by actually stopping the `db` container against a
+        # running API, not by reading this function or its (still-passing)
+        # unit tests, which only exercised an unreachable IP:port, not an
+        # unresolvable hostname (checkpoint 5).
         log.warning("database_unreachable", extra={"error_type": type(exc).__name__})
         raise DatabaseUnavailable("The database is currently unreachable.") from exc
     except SQLAlchemyError as exc:
