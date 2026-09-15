@@ -1,0 +1,104 @@
+# Render Blueprint for the Lenny Growth Assistant backend.
+#
+# Deploys:
+#   lenny-db   Managed PostgreSQL (pgvector extension enabled via migration).
+#   lenny-api  FastAPI backend (Docker), running the ingestion pipeline as a
+#              pre-deploy step so the corpus is indexed before traffic is served.
+#
+# The frontend is NOT deployed here -- it goes to Vercel separately, and its
+# VITE_API_BASE_URL build-time env var must point at lenny-api's public URL.
+#
+# Ollama cannot run on Render (no GPU / no persistent local model cache), so
+# this deployment uses a cloud provider. Set LLM_PROVIDER to anthropic or
+# openai below and add the matching *_API_KEY as a secret in the Render
+# dashboard (never commit it) -- the app's LLMProvider abstraction (see
+# backend/app) picks it up with no code changes.
+#
+# Deploy: connect this repo in the Render dashboard ("New +" -> "Blueprint"),
+# or `render blueprints launch` with the Render CLI.
+
+databases:
+  - name: lenny-db
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: lenny-api
+    runtime: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    # Runs the one-shot ingestion pipeline before each deploy starts serving
+    # traffic -- the Docker equivalent of compose's `ingest` service gating `api`.
+    preDeployCommand: python -m app.ingestion.pipeline
+    envVars:
+      # Matches the Dockerfile's EXPOSE 8000 / uvicorn --port 8000.
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lenny-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      # Fill in with the deployed Vercel URL(s) once the frontend is live,
+      # e.g. https://lenny-growth-assistant.vercel.app -- comma-separated,
+      # never "*" (the API carries session identity in cookies/headers).
+      - key: CORS_ORIGINS
+        value: https://REPLACE-WITH-YOUR-VERCEL-DOMAIN.vercel.app
+
+      # --- Cloud LLM provider (Ollama is local-only, see header note) ---
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: LLM_TEMPERATURE
+        value: "0.3"
+      - key: LLM_TIMEOUT_SECONDS
+        value: "60"
+      - key: LLM_MAX_OUTPUT_TOKENS
+        value: "2048"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+
+      # --- Embeddings: no local Ollama on Render, so retrieval falls back to
+      # lexical-only search unless you wire a hosted embedding provider. ---
+      - key: EMBEDDING_PROVIDER
+        value: none
+
+      - key: RETRIEVAL_TOP_K
+        value: "6"
+      - key: RETRIEVAL_CANDIDATE_K
+        value: "30"
+      - key: RETRIEVAL_MIN_CONFIDENCE
+        value: "0.48"
+      - key: RETRIEVAL_MAX_PER_EPISODE
+        value: "2"
+
+      - key: CORPUS_REPO
+        value: ChatPRD/lennys-podcast-transcripts
+      - key: CORPUS_COMMIT
+        value: be8ab89a890a833cbba2c892178f823fff178c65
+      - key: INGEST_MIN_DURATION_SECONDS
+        value: "1200"
+      - key: INGEST_MAX_EPISODES
+        value: "40"
+      - key: INGEST_ALL
+        value: "false"
+
+      - key: MAX_MESSAGE_CHARS
+        value: "4000"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"

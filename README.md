@@ -500,6 +500,74 @@ endpoint and session isolation against the real system, not a mock of it.
 
 ---
 
+## Deploying to Vercel + Render
+
+The default `docker compose up` demo is fully local and expects Ollama on the
+host. A public deployment has no host to reach, so it splits across two
+platforms and swaps the local model for a cloud one:
+
+| Piece | Platform | Why |
+|---|---|---|
+| `web` (React/Vite static build) | **Vercel** | Zero-config static hosting, instant preview URLs, free tier |
+| `api` (FastAPI) + `db` (Postgres) | **Render** | One Blueprint (`render.yaml`) provisions both; Docker-native |
+
+Ollama cannot run on either platform (no GPU, no persistent model cache), so
+the hosted deployment runs `LLM_PROVIDER=anthropic` (or `openai`) instead --
+the same `LLMProvider` abstraction used locally, just pointed at a different
+backend via one env var. `EMBEDDING_PROVIDER` also has to be `none` in this
+configuration (embeddings are Ollama-only today), so hosted retrieval is
+lexical-only rather than hybrid semantic+lexical; `/health/detail` reports
+this honestly rather than hiding it, matching the same degrade-gracefully
+behavior used for local Ollama outages.
+
+### 1. Deploy the backend + database to Render
+
+1. Push this repo to GitHub (Render deploys from a Git connection).
+2. In the Render dashboard: **New +** → **Blueprint**, pick this repo. Render
+   reads [`render.yaml`](render.yaml) and provisions `lenny-db` (Postgres) and
+   `lenny-api` (Docker web service) together.
+3. Before the first deploy, set these secrets on `lenny-api` (Render dashboard
+   → service → **Environment** -- `render.yaml` intentionally leaves them
+   blank with `sync: false` so they are never committed):
+   - `ANTHROPIC_API_KEY` (or switch `LLM_PROVIDER` to `openai` and set
+     `OPENAI_API_KEY` instead)
+4. Deploy. Render builds `backend/Dockerfile`, runs the ingestion pipeline as
+   a pre-deploy step (same corpus load `docker compose`'s `ingest` service
+   does), then starts the API. Watch the logs for `ingestion_complete`.
+5. Note the public URL Render assigns `lenny-api`, e.g.
+   `https://lenny-api.onrender.com` -- the frontend needs it next.
+
+### 2. Deploy the frontend to Vercel
+
+1. In the Vercel dashboard: **Add New** → **Project**, import this repo, set
+   **Root Directory** to `frontend`. Vercel auto-detects the Vite framework
+   preset (build command `npm run build`, output directory `dist`).
+2. Add one environment variable before the first build: `VITE_API_BASE_URL`
+   = the Render URL from step 1 (e.g. `https://lenny-api.onrender.com`).
+   Vite inlines this at build time, so it must be set before deploying, not
+   after -- changing it later requires a redeploy.
+3. Deploy. Note the resulting domain, e.g.
+   `https://lenny-growth-assistant.vercel.app`.
+
+### 3. Close the loop: point the API's CORS at the frontend
+
+The API only accepts requests from origins in `CORS_ORIGINS` -- it also
+drives the artifact viewer's `frame-ancestors`, so this step is required for
+both chat *and* the artifact panel to work.
+
+1. Back in Render, edit `lenny-api`'s `CORS_ORIGINS` env var to the Vercel
+   domain from step 2 (comma-separate if you also keep a preview domain).
+2. Render redeploys automatically on env var changes. Confirm with
+   `curl https://lenny-api.onrender.com/health/detail`.
+3. Open the Vercel URL, ask a question, and confirm sources and the artifact
+   viewer both render -- that exercises CORS, the LLM provider, and the CSP
+   frame-ancestors wiring all at once.
+
+Both platforms redeploy automatically on every push to the connected branch,
+so a subsequent `git push` is the entire update workflow.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

@@ -135,6 +135,20 @@ class Settings(BaseSettings):
     max_sessions_per_user: int = 200
     rate_limit_per_minute: int = 60
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, v: object) -> object:
+        """Accept the plain `postgresql://`/`postgres://` scheme managed
+        Postgres providers (Render, Railway, Supabase, ...) hand out, and
+        rewrite it to the asyncpg driver URL create_async_engine requires.
+        """
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                return "postgresql+asyncpg://" + v[len("postgres://") :]
+            if v.startswith("postgresql://"):
+                return "postgresql+asyncpg://" + v[len("postgresql://") :]
+        return v
+
     @field_validator("cors_origins", "ingest_episodes", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:

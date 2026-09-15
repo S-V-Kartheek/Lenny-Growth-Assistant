@@ -72,3 +72,22 @@ def test_provider_lookups_stay_in_sync() -> None:
 def test_sync_database_url_drops_the_async_driver() -> None:
     settings = Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@h:5432/d")
     assert settings.sync_database_url == "postgresql://u:p@h:5432/d"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "postgres://u:p@h:5432/d",
+        "postgresql://u:p@h:5432/d",
+    ],
+)
+def test_database_url_accepts_plain_postgres_schemes(raw: str) -> None:
+    """Managed Postgres providers (Render, Railway, Supabase, ...) hand out
+    postgres:// / postgresql:// connection strings; the app needs asyncpg."""
+    settings = Settings(_env_file=None, database_url=raw)
+    assert settings.database_url == "postgresql+asyncpg://u:p@h:5432/d"
+
+
+def test_database_url_leaves_asyncpg_scheme_untouched() -> None:
+    settings = Settings(_env_file=None, database_url="postgresql+asyncpg://u:p@h:5432/d")
+    assert settings.database_url == "postgresql+asyncpg://u:p@h:5432/d"
