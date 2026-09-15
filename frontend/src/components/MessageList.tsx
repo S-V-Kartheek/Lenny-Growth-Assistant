@@ -21,7 +21,7 @@ export function MessageList({
     return (
       <div className="empty-state">
         <div className="empty-state__icon" aria-hidden="true">
-          🌱
+          ?
         </div>
         <h2 className="empty-state__heading">What are you working on?</h2>
         <p className="empty-state__body">
