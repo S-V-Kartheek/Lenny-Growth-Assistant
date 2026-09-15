@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../api/types";
 import { isRefusal } from "../lib/grounding";
+import { ErrorBanner } from "./ErrorBanner";
 import { MessageBubble } from "./MessageBubble";
 import { RefusalBanner } from "./RefusalBanner";
 import { SourceCards } from "./SourceCards";
@@ -45,6 +46,21 @@ export function MessageList({
     <div className="message-list">
       {messages.map((m) => {
         if (m.role === "user") return <MessageBubble key={m.id} message={m} />;
+        if (m.error) {
+          return (
+            <div key={m.id} className="message-list__turn">
+              <ErrorBanner
+                error={{
+                  code: m.error.code ?? "internal_error",
+                  message: m.error.message ?? "The assistant failed while answering.",
+                  remediation: m.error.remediation ?? null,
+                  details: m.error.details ?? null,
+                  request_id: m.error.request_id ?? null,
+                }}
+              />
+            </div>
+          );
+        }
         if (isRefusal(m)) {
           return (
             <div key={m.id} className="message-list__turn">

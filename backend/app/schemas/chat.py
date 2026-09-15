@@ -47,6 +47,7 @@ class MessageRecord(BaseModel):
     token_usage: dict[str, Any] | None = None
     grounding: dict[str, Any] | None = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
+    error: dict[str, Any] | None = None
     created_at: datetime
 
 

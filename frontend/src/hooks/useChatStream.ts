@@ -34,6 +34,7 @@ export function useChatStream(sessionId: string | null) {
         token_usage: null,
         grounding: null,
         sources: [],
+        error: null,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, optimisticUser]);
@@ -59,6 +60,7 @@ export function useChatStream(sessionId: string | null) {
               token_usage: result.usage,
               grounding: result.grounding,
               sources: result.sources,
+              error: null,
               created_at: new Date().toISOString(),
             };
             setMessages((prev) => [...prev, finalised]);

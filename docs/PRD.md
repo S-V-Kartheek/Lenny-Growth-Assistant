@@ -112,7 +112,10 @@ could reasonably have gone the other way.
 - Explicit refusal when evidence is insufficient
 - Ship 30 for 30 essay skill (structured, not a one-off prompt)
 - Markdown and HTML/CSS artifact generation with an in-app sandboxed viewer
-- Provider abstraction: Ollama (demo default), Anthropic, OpenAI
+- Provider abstraction: Ollama (demo default), Anthropic, OpenAI, Gemini, Grok
+  (Gemini and Grok added in checkpoint 6 for the hosted Render deployment,
+  which has no Ollama host — Gemini as the primary cloud LLM and embedding
+  provider, Grok as its fallback)
 - Health, structured logging, graceful degradation for every dependency
 - Evaluation harness for retrieval, routing and grounding
 - One-command startup, documented handoff
@@ -127,7 +130,7 @@ could reasonably have gone the other way.
 | Fine-tuning | Retrieval quality, not model weights, is the bottleneck |
 | Voice, mobile app, analytics dashboards | No contribution to the core job |
 | Kubernetes / cloud deployment | "Deploy it locally" is the stated requirement; Compose is the reproducible unit |
-| More than three LLM providers | The abstraction is the deliverable, not the provider count |
+| An unbounded number of LLM providers | The abstraction is the deliverable, not the provider count; five (Ollama, Anthropic, OpenAI, Gemini, Grok) is enough to prove it generalises, including reusing one implementation (`openai.py`'s shape) for an OpenAI-compatible provider (Grok) with no new abstraction needed |
 
 ### 1.6 Risks and trade-offs
 
@@ -235,7 +238,8 @@ unknowns first, while there is still time to change approach.
 | 2 | **Provider abstraction, agent runtime, grounded chat** — LLM interface, routing, RAG skill, sessions, streaming | Where a small local model breaks. Retiring that risk early leaves room to adapt | **Complete** |
 | 3 | **Ship 30 and artifact skills** — structured essay generation, sanitiser, artifact persistence | Depends on a working grounded answer to build on | **Complete** |
 | 4 | **Frontend** — chat, sources, artifact viewer, states, accessibility | Built against a stable streaming API to avoid rework | **Complete** |
-| 5 | **Operations, documentation, final gate** — hardening, observability, docs, audit, fresh-evaluator test | Verification is worth most when there is a complete system to verify | |
+| 5 | **Operations, documentation, final gate** — hardening, observability, docs, audit, fresh-evaluator test | Verification is worth most when there is a complete system to verify | **Complete** |
+| 6 | **Production hardening** — fixing the hosted Render/Vercel deployment (no Ollama host there), adding a second cloud provider, live-testing the actual running app end to end | The system had already been deployed by this point and was failing in ways only visible in production logs and in a live UI session, not in any existing test | **Complete** |
 
 ### Checkpoint 1 outcome
 
@@ -397,3 +401,19 @@ Notable findings, in full in
   sources visible within ~2 seconds of retrieval finishing) rather than
   hiding it — the miss is a hardware/model-throughput fact, not a frontend
   defect.
+
+### Checkpoint 6 outcome
+
+Delivered: `EMBEDDING_PROVIDER=gemini` for the Render deployment (no GPU/
+persistent disk there for Ollama), a lexical OR-query fallback so a
+multi-concept question isn't refused just because the stricter AND query
+matches nothing, a fifth LLM provider (Grok, `app/llm/grok.py`) wired as
+`LLM_FALLBACK_PROVIDER` so a Gemini outage retries once before failing, a
+chat-panel auto-scroll fix, and a fix for a real data-loss bug where a
+failed turn's error was persisted correctly but silently dropped on every
+read path, serving clients an empty, unexplained message instead.
+
+Full account, including a documented false alarm (a request that looked
+permanently hung was actually 192 seconds of legitimate CPU-only Ollama
+latency) and the investigation that ruled it out, in
+[`agent-transcripts/checkpoint-6-production-hardening.md`](../agent-transcripts/checkpoint-6-production-hardening.md).

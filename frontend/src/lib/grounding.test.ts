@@ -15,6 +15,7 @@ function message(grounding: MessageRecord["grounding"]): MessageRecord {
     token_usage: null,
     grounding,
     sources: [],
+    error: null,
     created_at: new Date().toISOString(),
   };
 }

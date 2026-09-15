@@ -94,6 +94,7 @@ export interface MessageRecord {
   token_usage: Record<string, unknown> | null;
   grounding: Grounding | null;
   sources: Source[];
+  error: Partial<ErrorBody> | null;
   created_at: string;
 }
 

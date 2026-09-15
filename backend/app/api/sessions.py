@@ -60,6 +60,7 @@ def _record(row: sessions.MessageRow) -> MessageRecord:
         token_usage=row.token_usage,
         grounding=row.grounding,
         sources=row.sources,
+        error=row.error,
         created_at=row.created_at,
     )
 

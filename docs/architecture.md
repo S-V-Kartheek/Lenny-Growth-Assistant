@@ -38,7 +38,8 @@ boundary."
              │            ┌──────▼─────┐             │
              │            │ LLM gateway│  Ollama /    │ sanitised
              │            │            │  Anthropic / │ artifact
-             │            └────────────┘  OpenAI      │ content
+             │            │            │  OpenAI /    │ content
+             │            └────────────┘  Gemini /Grok│
              ▼                                        │
       ┌──────────────────────────────────────┐        │
       │  Ingestion (`ingest`, one-shot)       │        │
@@ -88,7 +89,7 @@ ingestion and querying can interleave (an evaluator can query while a second
 |---|---|---|
 | `users` | One row per caller | `external_id` — see §4, this is a label, not an authenticated identity |
 | `sessions` | One chat thread | `updated_at` kept current by a trigger (`touch_session_updated_at`) fired on every `messages` insert, so "recent sessions first" needs no application-side bookkeeping |
-| `messages` | One row per turn (user or assistant) | `intent`, `provider`, `model`, `latency_ms`, `grounding JSONB`, `error JSONB` — routing and grounding are recorded per message, not just logged, so they're inspectable after the fact from the database alone |
+| `messages` | One row per turn (user or assistant) | `intent`, `provider`, `model`, `latency_ms`, `grounding JSONB`, `error JSONB` — routing and grounding are recorded per message, not just logged, so they're inspectable after the fact; `error` is also returned on `MessageRecord` via the API (checkpoint 6 — a failed turn was writing this column correctly but the read path and API schema both dropped it, so a timeout was served to the client as an empty, unexplained message) |
 | `message_sources` | Which chunk backed which answer | `chunk_id` (`ON DELETE SET NULL` — a citation survives even if the source chunk is later removed by a corpus refresh), `cited BOOLEAN`, `rank`, `score`, `snapshot JSONB` (a frozen copy of the source's display fields, so a citation still renders correctly even if `episodes`/`chunks` change under it) |
 | `artifacts` | Generated Markdown/HTML | `content` (sanitised — the only field ever returned by the API) vs. `raw_content` (unsanitised model output, debugging-only); `version` atomic per session |
 
@@ -300,8 +301,11 @@ the formatter level, not by trusting call sites to remember.
 ## 5. Provider abstraction and degraded-mode behaviour
 
 One interface (`app/llm/base.py`: `health`, `stream`, `complete` built on
-`stream`), three implementations (`ollama.py`, `anthropic.py`, `openai.py`),
-built on raw `httpx` rather than vendor SDKs — a stated trade-off
+`stream`), five implementations (`ollama.py`, `anthropic.py`, `openai.py`,
+`gemini.py`, `grok.py` — the last reusing `openai.py`'s Chat Completions
+shape against xAI's OpenAI-compatible endpoint, since that is what the
+provider actually is), built on raw `httpx` rather than vendor SDKs — a
+stated trade-off
 (`app/llm/transport.py`'s docstring): the vendor SDKs would give free
 retries and forward-compatibility, at the cost of normalising three
 different retry/error/streaming shapes into this system's own instead of

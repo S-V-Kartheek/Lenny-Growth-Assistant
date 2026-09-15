@@ -50,6 +50,7 @@ class MessageRow:
     grounding: dict[str, Any] | None
     created_at: Any
     sources: list[dict[str, Any]] = field(default_factory=list)
+    error: dict[str, Any] | None = None
 
 
 async def get_or_create_anonymous_user() -> str:
@@ -189,7 +190,7 @@ async def get_history(session_id: str) -> list[MessageRow]:
             await conn.execute(
                 text(
                     "SELECT id, session_id, role, content, intent, provider, model, "
-                    "latency_ms, token_usage, grounding, created_at "
+                    "latency_ms, token_usage, grounding, error, created_at "
                     "FROM messages WHERE session_id = :sid ORDER BY created_at ASC"
                 ),
                 {"sid": session_id},
@@ -228,6 +229,7 @@ async def get_history(session_id: str) -> list[MessageRow]:
             grounding=m["grounding"],
             created_at=m["created_at"],
             sources=by_message.get(str(m["id"]), []),
+            error=m["error"],
         )
         for m in messages
     ]
