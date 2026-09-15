@@ -31,6 +31,7 @@ from app.errors import ProviderTimeout, ProviderUnavailable
 from app.llm.anthropic import AnthropicProvider
 from app.llm.base import ChatMessage, LLMProvider, ProviderHealth, StreamEvent
 from app.llm.gemini import GeminiProvider
+from app.llm.grok import GrokProvider
 from app.llm.ollama import OllamaProvider
 from app.llm.openai import OpenAIProvider
 
@@ -41,6 +42,7 @@ _BUILDERS = {
     Provider.ANTHROPIC: AnthropicProvider,
     Provider.OPENAI: OpenAIProvider,
     Provider.GEMINI: GeminiProvider,
+    Provider.GROK: GrokProvider,
 }
 
 # Errors that mean "this backend could not serve the request", as opposed to

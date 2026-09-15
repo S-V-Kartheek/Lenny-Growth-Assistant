@@ -27,6 +27,7 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     GEMINI = "gemini"
+    GROK = "grok"
 
 
 class Settings(BaseSettings):
@@ -96,12 +97,19 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_context_tokens: int = 1000000
 
+    # xAI's Grok, OpenAI-compatible Chat Completions API -- reuses OpenAIProvider
+    # with its own base URL rather than a bespoke client.
+    grok_api_key: str | None = None
+    grok_model: str = "grok-4-fast"
+    grok_base_url: str = "https://api.x.ai/v1"
+    grok_context_tokens: int = 131072
+
     # If the selected provider is unreachable, fall back to this one when it is
     # configured. Empty string disables fallback (fail loudly instead).
     llm_fallback_provider: Provider | None = None
 
     # ---------------------------------------------------------- embedding ---
-    embedding_provider: Literal["ollama", "none"] = "ollama"
+    embedding_provider: Literal["ollama", "gemini", "none"] = "ollama"
     embedding_model: str = "nomic-embed-text"
     embedding_dimensions: int = 768
     # Measured on nomic-embed-text: 16/batch ~3.8 chunks/s, 128/batch ~8.7.
@@ -178,7 +186,11 @@ class Settings(BaseSettings):
         return v
 
     @field_validator(
-        "llm_fallback_provider", "anthropic_api_key", "openai_api_key", "gemini_api_key",
+        "llm_fallback_provider",
+        "anthropic_api_key",
+        "openai_api_key",
+        "gemini_api_key",
+        "grok_api_key",
         mode="before",
     )
     @classmethod
@@ -210,6 +222,7 @@ class Settings(BaseSettings):
             Provider.ANTHROPIC: self.anthropic_model,
             Provider.OPENAI: self.openai_model,
             Provider.GEMINI: self.gemini_model,
+            Provider.GROK: self.grok_model,
         }[provider]
 
     def context_tokens_for(self, provider: Provider) -> int:
@@ -218,6 +231,7 @@ class Settings(BaseSettings):
             Provider.ANTHROPIC: self.anthropic_context_tokens,
             Provider.OPENAI: self.openai_context_tokens,
             Provider.GEMINI: self.gemini_context_tokens,
+            Provider.GROK: self.grok_context_tokens,
         }[provider]
 
     def api_key_for(self, provider: Provider) -> str | None:
@@ -226,6 +240,7 @@ class Settings(BaseSettings):
             Provider.ANTHROPIC: self.anthropic_api_key,
             Provider.OPENAI: self.openai_api_key,
             Provider.GEMINI: self.gemini_api_key,
+            Provider.GROK: self.grok_api_key,
         }[provider]
 
 

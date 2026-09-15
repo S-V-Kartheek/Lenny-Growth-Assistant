@@ -7,7 +7,7 @@ that deep-link to the exact second of the episode the claim came from.
 
 It runs entirely on your machine: **Ollama** for the model, **PostgreSQL +
 pgvector** for the index, **FastAPI** for the API. Cloud providers (Anthropic,
-OpenAI) are a configuration change, not a code change.
+OpenAI, Gemini, Grok) are a configuration change, not a code change.
 
 > **Status:** All 5 checkpoints complete — knowledge spine, provider-agnostic
 > LLM layer, grounded Q&A, the Ship 30 essay skill, Markdown/sanitised-HTML
@@ -100,7 +100,7 @@ backend/
     db/                 Engine, migration runner, SQL schema
     ingestion/          fetch → parse → chunk → select → pipeline
     retrieval/          Hybrid retriever, embeddings, inspector CLI
-    llm/                Provider abstraction: Ollama · Anthropic · OpenAI
+    llm/                Provider abstraction: Ollama · Anthropic · OpenAI · Gemini · Grok
     agent/              Skill contract, router, runtime, skills (Q&A, essay,
                         artifact), essay contract, HTML/Markdown sanitiser
     api/artifacts.py    List/get artifacts, isolated HTML document endpoint
@@ -195,10 +195,11 @@ worth knowing:
 
 | Variable | Default | Effect |
 |---|---|---|
-| `LLM_PROVIDER` | `ollama` | `ollama` · `anthropic` · `openai` |
+| `LLM_PROVIDER` | `ollama` | `ollama` · `anthropic` · `openai` · `gemini` · `grok` |
+| `LLM_FALLBACK_PROVIDER` | (unset) | If the primary times out or is unreachable *before the first token*, retry once on this provider. Empty fails loudly instead |
 | `OLLAMA_MODEL` | `qwen2.5:7b-instruct` | Any pulled model |
 | `OLLAMA_CONTEXT_TOKENS` | `32768` | **Must match the model.** Context budgeting depends on it |
-| `EMBEDDING_PROVIDER` | `ollama` | `none` forces lexical-only retrieval |
+| `EMBEDDING_PROVIDER` | `ollama` | `ollama` · `gemini` · `none` (lexical-only retrieval) |
 | `RETRIEVAL_TOP_K` | `6` | Passages given to the model |
 | `RETRIEVAL_MIN_CONFIDENCE` | `0.48` | Below this, the assistant refuses. Calibrated, see below |
 | `RETRIEVAL_MAX_PER_EPISODE` | `2` | Stops one episode monopolising the citations |
@@ -208,9 +209,16 @@ worth knowing:
 Switching to a cloud model is two lines and no code change:
 
 ```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=AIza...
 ```
+
+Grok (xAI) works the same way (`GROK_API_KEY`) and is most useful as
+`LLM_FALLBACK_PROVIDER` -- a second, independent backend the gateway retries
+on if the primary times out, so a single provider outage doesn't turn into a
+refused answer. See [`app/llm/registry.py`](backend/app/llm/registry.py) for
+the exact fallback rules (only before the first token, only on
+timeout/unavailable, never on a 4xx).
 
 **No secrets are committed.** `.env` is gitignored; `.env.example` contains only
 safe defaults and empty key placeholders.
@@ -512,13 +520,16 @@ platforms and swaps the local model for a cloud one:
 | `api` (FastAPI) + `db` (Postgres) | **Render** | One Blueprint (`render.yaml`) provisions both; Docker-native |
 
 Ollama cannot run on either platform (no GPU, no persistent model cache), so
-the hosted deployment runs `LLM_PROVIDER=anthropic` (or `openai`) instead --
-the same `LLMProvider` abstraction used locally, just pointed at a different
-backend via one env var. `EMBEDDING_PROVIDER` also has to be `none` in this
-configuration (embeddings are Ollama-only today), so hosted retrieval is
-lexical-only rather than hybrid semantic+lexical; `/health/detail` reports
-this honestly rather than hiding it, matching the same degrade-gracefully
-behavior used for local Ollama outages.
+the hosted deployment runs `LLM_PROVIDER=gemini` with `LLM_FALLBACK_PROVIDER=grok`
+instead -- the same `LLMProvider` abstraction used locally, just pointed at
+two cloud backends via env vars, so a Gemini timeout or outage fails over to
+Grok instead of degrading straight to a refusal. `EMBEDDING_PROVIDER=gemini`
+similarly replaces Ollama for the embedding step: Gemini's
+`text-embedding-004` outputs a fixed 768 dimensions, matching the
+`vector(768)` column, so hosted retrieval stays hybrid semantic+lexical
+rather than falling back to lexical-only. `/health/detail` reports the
+active provider and any degradation honestly either way, matching the same
+degrade-gracefully behavior used for local Ollama outages.
 
 ### 1. Deploy the backend + database to Render
 
@@ -529,8 +540,10 @@ behavior used for local Ollama outages.
 3. Before the first deploy, set these secrets on `lenny-api` (Render dashboard
    → service → **Environment** -- `render.yaml` intentionally leaves them
    blank with `sync: false` so they are never committed):
-   - `ANTHROPIC_API_KEY` (or switch `LLM_PROVIDER` to `openai` and set
-     `OPENAI_API_KEY` instead)
+   - `GEMINI_API_KEY` -- powers both the primary LLM and embeddings
+   - `GROK_API_KEY` -- optional, but required for `LLM_FALLBACK_PROVIDER=grok`
+     to actually do anything; with no key it's a documented no-op and the
+     system fails loudly on a Gemini outage, same as with no fallback set
 4. Deploy. Render builds `backend/Dockerfile`, runs the ingestion pipeline as
    a pre-deploy step (same corpus load `docker compose`'s `ingest` service
    does), then starts the API. Watch the logs for `ingestion_complete`.

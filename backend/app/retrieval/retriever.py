@@ -209,6 +209,22 @@ class Retriever:
 
     # -------------------------------------------------------------- legs ---
     async def _lexical(self, query: str, k: int) -> list[tuple[str, float]]:
+        rows = await self._lexical_query(query, k)
+        if rows:
+            return rows
+        # websearch_to_tsquery ANDs every term: a five-concept question ("B2B
+        # SaaS activation improve product") needs one chunk containing every
+        # word, and often none exists even though several chunks answer it
+        # well on a subset of those terms. OR-ing the same words trades
+        # precision for the recall that keeps a good question from being
+        # refused outright -- RRF fusion and diversification downstream still
+        # weed out the resulting weak matches.
+        words = query.split()
+        if len(words) < 2:
+            return rows
+        return await self._lexical_query(" OR ".join(words), k)
+
+    async def _lexical_query(self, query: str, k: int) -> list[tuple[str, float]]:
         async with connection() as conn:
             rows = (await conn.execute(text(_LEXICAL_SQL), {"query": query, "k": k})).all()
         return [(str(r[0]), float(r[1])) for r in rows]
