@@ -13,7 +13,7 @@ import { getSessionHistory, listSessionArtifacts } from "../api/client";
 
 export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
   const { status: providerStatus, switching: providerSwitching, switchProvider } = useProvider();
-  const { sessions, activeId, setActiveId, newSession } = useSessions();
+  const { sessions, activeId, setActiveId, newSession, rename, remove } = useSessions();
   const { messages, setHistory, stream, send, resetStream } = useChatStream(activeId);
   const [artifactId, setArtifactId] = useState<string | null>(null);
   const { artifact, loading: artifactLoading } = useArtifact(artifactId);
@@ -95,6 +95,8 @@ export function ChatWorkspace({ onBack }: { onBack?: () => void }) {
             newSession();
             setArtifactId(null);
           }}
+          onRename={rename}
+          onDelete={remove}
         />
         <main className="chat-panel">
           <div className="chat-panel__scroll" ref={scrollRef} onScroll={handleScroll}>

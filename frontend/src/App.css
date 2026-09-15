@@ -328,13 +328,10 @@ button {
 .sidebar__item {
   position: relative;
   width: 100%;
-  text-align: left;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.55rem 0.7rem;
-  border: none;
+  gap: 0.3rem;
+  padding: 0.15rem 0.7rem 0.15rem 0.15rem;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text);
@@ -344,6 +341,11 @@ button {
 
 .sidebar__item:hover {
   background: var(--bg-panel);
+}
+
+.sidebar__item:hover .sidebar__item-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar__item--active {
@@ -365,10 +367,23 @@ button {
   background: var(--accent);
 }
 
+.sidebar__item-select {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0.4rem 0;
+}
+
 .sidebar__item-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: block;
 }
 
 .sidebar__item-count {
@@ -383,6 +398,55 @@ button {
 .sidebar__item--active .sidebar__item-count {
   background: var(--accent-soft);
   opacity: 1;
+}
+
+.sidebar__item-actions {
+  display: flex;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.sidebar__item-action {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sidebar__item-action:hover {
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.sidebar__item-action--danger:hover {
+  color: var(--error-border);
+}
+
+.sidebar__item-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.sidebar__item-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* --------------------------------------------------------------- chat area */

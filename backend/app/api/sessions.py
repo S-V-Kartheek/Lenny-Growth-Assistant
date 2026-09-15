@@ -86,6 +86,26 @@ async def get_session_history(session_id: str, user_id: UserIdDep) -> SessionHis
     )
 
 
+@router.patch("/{session_id}", response_model=SessionSummary)
+async def rename_session(
+    session_id: str, body: UpdateSessionRequest, user_id: UserIdDep
+) -> SessionSummary:
+    row = await sessions.update_session_title(session_id, user_id, body.title)
+    return _summary(row)
+
+
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(session_id: str, user_id: UserIdDep) -> None:
+    """Archives rather than hard-deletes (`sessions.archived`).
+
+    `list_sessions`/`get_session` both filter `archived = FALSE`, so a
+    deleted session disappears from the sidebar and can no longer be opened
+    or posted to -- indistinguishable from a hard delete through this API --
+    while its rows (and any citations resolving into it) aren't destroyed.
+    """
+    await sessions.archive_session(session_id, user_id)
+
+
 @router.post("/{session_id}/messages")
 async def post_message(
     session_id: str,

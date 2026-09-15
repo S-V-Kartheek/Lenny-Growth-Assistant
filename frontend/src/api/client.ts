@@ -51,6 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, body);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -79,6 +80,17 @@ export function createSession(title?: string): Promise<SessionSummary> {
 
 export function getSessionHistory(sessionId: string): Promise<SessionHistoryResponse> {
   return request<SessionHistoryResponse>(`/api/sessions/${sessionId}`);
+}
+
+export function renameSession(sessionId: string, title: string): Promise<SessionSummary> {
+  return request<SessionSummary>(`/api/sessions/${sessionId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function deleteSession(sessionId: string): Promise<void> {
+  return request<void>(`/api/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 export function listSessionArtifacts(sessionId: string): Promise<ArtifactListResponseLike> {

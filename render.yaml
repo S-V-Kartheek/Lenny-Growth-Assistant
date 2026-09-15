@@ -1,27 +1,25 @@
 # Render Blueprint for the Lenny Growth Assistant backend.
 #
 # Deploys:
-#   lenny-db   Managed PostgreSQL (pgvector extension enabled via migration).
 #   lenny-api  FastAPI backend (Docker), running the ingestion pipeline as a
 #              pre-deploy step so the corpus is indexed before traffic is served.
+#
+# Database: Supabase Postgres (pgvector enabled), not a service this
+# Blueprint provisions -- DATABASE_URL below is a manually-set secret
+# pointing at the Supabase project's session pooler connection string. Set
+# up once via the Supabase dashboard/MCP; not part of `render.yaml` because
+# a Supabase project isn't a Render resource type.
 #
 # The frontend is NOT deployed here -- it goes to Vercel separately, and its
 # VITE_API_BASE_URL build-time env var must point at lenny-api's public URL.
 #
 # Ollama cannot run on Render (no GPU / no persistent local model cache), so
-# this deployment uses a cloud provider. Set LLM_PROVIDER to anthropic or
-# openai below and add the matching *_API_KEY as a secret in the Render
-# dashboard (never commit it) -- the app's LLMProvider abstraction (see
-# backend/app) picks it up with no code changes.
+# this deployment uses cloud providers instead (see LLM_PROVIDER /
+# LLM_FALLBACK_PROVIDER below) -- the app's LLMProvider abstraction (see
+# backend/app) picks up a provider change with no code change.
 #
 # Deploy: connect this repo in the Render dashboard ("New +" -> "Blueprint"),
 # or `render blueprints launch` with the Render CLI.
-
-databases:
-  - name: lenny-db
-    plan: basic-256mb
-    region: oregon
-    postgresMajorVersion: "16"
 
 services:
   - type: web
@@ -39,10 +37,18 @@ services:
       # Matches the Dockerfile's EXPOSE 8000 / uvicorn --port 8000.
       - key: PORT
         value: "8000"
+      # Supabase Postgres (checkpoint 6), not Render's managed Postgres --
+      # set manually in the Render dashboard to the project's "Session
+      # pooler" connection string (Supabase dashboard -> Project Settings ->
+      # Database -> Connection string -> Session pooler, port 5432). The
+      # session pooler is required, not the direct connection: Supabase's
+      # direct host is IPv6-only and Render's outbound network is IPv4, and
+      # unlike the transaction pooler, the session pooler supports prepared
+      # statements the same as a direct connection, so no asyncpg
+      # connect_args change is needed. sync: false so the password is never
+      # committed.
       - key: DATABASE_URL
-        fromDatabase:
-          name: lenny-db
-          property: connectionString
+        sync: false
       - key: ENVIRONMENT
         value: production
       - key: LOG_LEVEL
